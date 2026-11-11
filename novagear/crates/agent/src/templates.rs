@@ -437,6 +437,39 @@ mod tests {
         }
     }
 
+    #[test]
+    fn template_pause_key_targets_novaguard() {
+        let t = template();
+        let key = t.modes[0]
+            .pages
+            .iter()
+            .flat_map(|p| p.keys.iter().flatten())
+            .find(|k| k.label == "Pause all")
+            .unwrap();
+        let pause = Action::ClientEvent {
+            client: "novaguard".into(),
+            name: "pause_all".into(),
+            value: None,
+        };
+        assert_eq!(key.action, pause);
+        assert_eq!(key.follow.as_deref(), Some("novaguard.paused"));
+        let states = key.states.as_ref().expect("two states");
+        assert_eq!(states[0].label, "Pause all");
+        assert_eq!(states[0].icon.as_deref(), Some("lucide/pause.svg"));
+        assert_eq!(states[1].label, "Paused");
+        assert_eq!(states[1].icon.as_deref(), Some("lucide/play.svg"));
+        assert_eq!(states[1].color.as_deref(), Some("#d97706"));
+        // Each state's action says what the key is showing, so NovaGuard can tell a stale
+        // label from a real press.
+        let showing = |v: i32| Action::ClientEvent {
+            client: "novaguard".into(),
+            name: "pause_all".into(),
+            value: Some(serde_json::json!(v)),
+        };
+        assert_eq!(states[0].action, showing(0));
+        assert_eq!(states[1].action, showing(1));
+    }
+
     fn with_dev() -> Config {
         Config {
             modes: vec![Mode {

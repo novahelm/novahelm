@@ -104,9 +104,34 @@
               "label": "Pause all",
               "color": "#3f3f46",
               "icon": "lucide/pause.svg",
+              "follow": "novaguard.paused",
+              "states": [
+                {
+                  "label": "Pause all",
+                  "color": "#3f3f46",
+                  "icon": "lucide/pause.svg",
+                  "action": {
+                    "do": "client_event",
+                    "client": "novaguard",
+                    "name": "pause_all",
+                    "value": 0
+                  }
+                },
+                {
+                  "label": "Paused",
+                  "color": "#d97706",
+                  "icon": "lucide/play.svg",
+                  "action": {
+                    "do": "client_event",
+                    "client": "novaguard",
+                    "name": "pause_all",
+                    "value": 1
+                  }
+                }
+              ],
               "action": {
                 "do": "client_event",
-                "client": "nova",
+                "client": "novaguard",
                 "name": "pause_all"
               }
             },

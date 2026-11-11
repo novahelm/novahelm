@@ -49,6 +49,11 @@ pub fn token_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("token"))
 }
 
+/// The agent's Unix socket (0600), the only way NovaGuard reaches the API.
+pub fn socket_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("agent.sock"))
+}
+
 pub fn read_token() -> Result<String> {
     let p = token_path()?;
     let t = std::fs::read_to_string(&p)
@@ -250,9 +255,19 @@ impl Config {
     /// Loads the config, or the defaults when there is no file yet.
     pub fn load(path: &Path) -> Result<Config> {
         match std::fs::read_to_string(path) {
-            Ok(s) => serde_json::from_str::<Config>(&s)
-                .map(Config::normalized)
-                .with_context(|| format!("parsing {}", path.display())),
+            Ok(s) => {
+                let mut c = serde_json::from_str::<Config>(&s)
+                    .map(Config::normalized)
+                    .with_context(|| format!("parsing {}", path.display()))?;
+                // Pause all moved from the nova client to NovaGuard; the saved file follows
+                // so the live Development mode is updated without a hand edit.
+                if c.migrate_pause_key()
+                    && let Err(e) = c.save(path)
+                {
+                    tracing::warn!("saving the migrated Pause all key: {e:#}");
+                }
+                Ok(c)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Ok(Config::default().normalized())
             }
@@ -348,6 +363,76 @@ impl Config {
             }
         }
         self
+    }
+
+    /// Turns the old flat Pause all key (`client_event` client `nova`, name `pause_all`)
+    /// into the two-state key that follows `novaguard.paused`, and gives a key already
+    /// migrated the values it lacks. Each state's action carries the state it shows (0
+    /// "Pause all", 1 "Paused"), so NovaGuard can tell a stale label from a real press.
+    /// Touches nothing else, and returns whether anything changed so the caller saves only
+    /// then.
+    pub fn migrate_pause_key(&mut self) -> bool {
+        use crate::modes::KeyState;
+        let is_old = |a: &Action| {
+            matches!(a, Action::ClientEvent { client, name, value: _ }
+                if client == "nova" && name == "pause_all")
+        };
+        let pause = |value| Action::ClientEvent {
+            client: "novaguard".into(),
+            name: "pause_all".into(),
+            value,
+        };
+        let shows = |state: u8| Some(serde_json::json!(state));
+        let mut changed = false;
+        let pages = self
+            .pages
+            .iter_mut()
+            .chain(self.modes.iter_mut().flat_map(|m| m.pages.iter_mut()));
+        for key in pages.flat_map(|p| p.keys.iter_mut().flatten()) {
+            // Only a key whose look follows the feed: otherwise a value says nothing about
+            // the pause.
+            if key.follow.as_deref() == Some("novaguard.paused")
+                && let Some(states) = key.states.as_mut()
+            {
+                for (state, s) in (0u8..).zip(states.iter_mut()) {
+                    if let Action::ClientEvent {
+                        client,
+                        name,
+                        value,
+                    } = &mut s.action
+                        && client == "novaguard"
+                        && name == "pause_all"
+                        && value.is_none()
+                    {
+                        *value = shows(state);
+                        changed = true;
+                    }
+                }
+            }
+            if !is_old(&key.action) || key.states.is_some() {
+                continue;
+            }
+            key.states = Some([
+                KeyState {
+                    label: "Pause all".into(),
+                    color: Some("#3f3f46".into()),
+                    icon: Some("lucide/pause.svg".into()),
+                    face: Default::default(),
+                    action: pause(shows(0)),
+                },
+                KeyState {
+                    label: "Paused".into(),
+                    color: Some("#d97706".into()),
+                    icon: Some("lucide/play.svg".into()),
+                    face: Default::default(),
+                    action: pause(shows(1)),
+                },
+            ]);
+            key.follow = Some("novaguard.paused".into());
+            key.action = pause(None);
+            changed = true;
+        }
+        changed
     }
 
     /// A page by name: the top-level pages first (a config not yet normalized), then the
@@ -546,5 +631,160 @@ mod tests {
         assert_eq!(names, ["New1", "New2"]);
         assert_eq!(c.start_page, "New2");
         assert_eq!(c.clone().normalized(), c);
+    }
+
+    fn old_pause_key() -> serde_json::Value {
+        serde_json::json!({"label": "Pause all", "color": "#3f3f46", "icon": "lucide/pause.svg",
+            "action": {"do": "client_event", "client": "nova", "name": "pause_all"}})
+    }
+
+    fn other_nova_key() -> serde_json::Value {
+        serde_json::json!({"label": "Other", "color": "#111111",
+            "action": {"do": "client_event", "client": "nova", "name": "something_else"}})
+    }
+
+    fn pause_config_file(dir: &Path) -> PathBuf {
+        let path = dir.join("config.json");
+        std::fs::create_dir_all(dir).unwrap();
+        let cfg = serde_json::json!({
+            "modes": [{"id": "dev", "name": "Dev", "pages": [
+                {"name": "Home", "keys": [other_nova_key(), null, old_pause_key()]},
+                {"name": "Two", "keys": [old_pause_key()]}
+            ]}],
+            "start_mode": "dev",
+            "start_page": "Home"
+        });
+        std::fs::write(&path, serde_json::to_vec_pretty(&cfg).unwrap()).unwrap();
+        path
+    }
+
+    /// The action a Pause all state sends: the value is the state the key is showing.
+    fn pause_showing(value: u8) -> Action {
+        Action::ClientEvent {
+            client: "novaguard".into(),
+            name: "pause_all".into(),
+            value: Some(serde_json::json!(value)),
+        }
+    }
+
+    /// A key as the first migration left it: two states, following the feed, no values.
+    fn migrated_pause_key_without_values() -> serde_json::Value {
+        let send =
+            serde_json::json!({"do": "client_event", "client": "novaguard", "name": "pause_all"});
+        serde_json::json!({"label": "Pause all", "color": "#3f3f46", "follow": "novaguard.paused",
+            "states": [
+                {"label": "Hold it all", "color": "#112233", "icon": "lucide/pause.svg", "action": send},
+                {"label": "Held", "color": "#445566", "icon": "lucide/play.svg",
+                 "action": {"do": "client_event", "client": "novaguard", "name": "pause_all", "value": null}}
+            ],
+            "action": send})
+    }
+
+    fn config_with_keys(keys: Vec<serde_json::Value>) -> Config {
+        serde_json::from_value(serde_json::json!({
+            "modes": [{"id": "dev", "name": "Dev", "pages": [{"name": "Home", "keys": keys}]}],
+            "start_mode": "dev",
+            "start_page": "Home"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn pause_migration_adds_values_to_a_key_already_migrated() {
+        let mut c = config_with_keys(vec![migrated_pause_key_without_values()]);
+        assert!(c.migrate_pause_key());
+        let k = c.modes[0].pages[0].keys[0].as_ref().unwrap();
+        let st = k.states.as_ref().unwrap();
+        assert_eq!(st[0].action, pause_showing(0));
+        assert_eq!(st[1].action, pause_showing(1));
+        // The person's own look stays.
+        assert_eq!(st[0].label, "Hold it all");
+        assert_eq!(st[1].color.as_deref(), Some("#445566"));
+        assert!(!c.migrate_pause_key(), "a second pass changes nothing");
+    }
+
+    #[test]
+    fn pause_migration_saves_added_values_once() {
+        let dir = std::env::temp_dir().join(format!("novagear-pause3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        let cfg = config_with_keys(vec![migrated_pause_key_without_values()]);
+        std::fs::write(&path, serde_json::to_vec_pretty(&cfg).unwrap()).unwrap();
+        let first = Config::load(&path).unwrap();
+        let st = first.modes[0].pages[0].keys[0].as_ref().unwrap();
+        assert_eq!(st.states.as_ref().unwrap()[1].action, pause_showing(1));
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(Config::load(&path).unwrap(), first);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn pause_migration_leaves_other_keys_alone() {
+        // No follow: its look is a press count, so a value would say nothing about the pause.
+        let mut unfollowed = migrated_pause_key_without_values();
+        unfollowed.as_object_mut().unwrap().remove("follow");
+        // Another client's two-state key on the same feed, and a value someone chose.
+        let other = serde_json::json!({"label": "F", "color": "#000000", "follow": "novaguard.paused",
+            "states": [
+                {"label": "a", "action": {"do": "client_event", "client": "nova", "name": "focus"}},
+                {"label": "b", "action": {"do": "client_event", "client": "novaguard", "name": "other"}}
+            ],
+            "action": {"do": "client_event", "client": "nova", "name": "focus"}});
+        let mut c = config_with_keys(vec![unfollowed, other, other_nova_key()]);
+        let before = c.clone();
+        assert!(!c.migrate_pause_key());
+        assert_eq!(c, before);
+    }
+
+    #[test]
+    fn config_load_moves_old_pause_key() {
+        let dir = std::env::temp_dir().join(format!("novagear-pause-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = pause_config_file(&dir);
+        let c = Config::load(&path).unwrap();
+        let pause = Action::ClientEvent {
+            client: "novaguard".into(),
+            name: "pause_all".into(),
+            value: None,
+        };
+        let pages = &c.mode("dev").unwrap().pages;
+        for k in [&pages[0].keys[2], &pages[1].keys[0]] {
+            let k = k.as_ref().unwrap();
+            assert_eq!(k.follow.as_deref(), Some("novaguard.paused"));
+            assert_eq!(k.action, pause);
+            let st = k.states.as_ref().unwrap();
+            assert_eq!(st[0].label, "Pause all");
+            assert_eq!(st[0].icon.as_deref(), Some("lucide/pause.svg"));
+            assert_eq!(st[1].label, "Paused");
+            assert_eq!(st[1].icon.as_deref(), Some("lucide/play.svg"));
+            assert_eq!(st[0].action, pause_showing(0));
+            assert_eq!(st[1].action, pause_showing(1));
+        }
+        let other: KeyBinding = serde_json::from_value(other_nova_key()).unwrap();
+        assert_eq!(pages[0].keys[0].as_ref(), Some(&other));
+        assert!(pages[0].keys[1].is_none());
+        // The migrated config was saved.
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.contains("novaguard.paused"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn config_load_pause_migration_is_idempotent() {
+        let dir = std::env::temp_dir().join(format!("novagear-pause2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = pause_config_file(&dir);
+        let first = Config::load(&path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let second = Config::load(&path).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), mtime);
+        let mut again = second.clone();
+        assert!(!again.migrate_pause_key());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
