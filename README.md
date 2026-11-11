@@ -11,7 +11,8 @@ the open; more of them move here over time.
 
 ## Our licence promise
 
-Every folder has its own `LICENSE`. Apps that run on your machine and the shared kits are Apache-2.0; the NovaHelm cloud,
+Every folder has its own `LICENSE`, and the `LICENSE` at the root (Apache-2.0) covers anything a folder's own file
+doesn't. Apps that run on your machine and the shared kits are Apache-2.0; the NovaHelm cloud,
 when it lands here, will be AGPL-3.0. These licences won't change: no move to a "source available" licence, no
 features held back under a separate licence, and no CLA. Contributions use a DCO sign-off instead (see
 [CONTRIBUTING.md](CONTRIBUTING.md)).
