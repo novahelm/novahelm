@@ -1,0 +1,43 @@
+name: checks
+
+# Every pull request: each commit carries a DCO sign-off, and nothing secret-shaped is added.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            author="$(git log -1 --format='%an <%ae>' "$c")"
+            if ! git log -1 --format=%B "$c" | grep -qiF "Signed-off-by: $author"; then
+              echo "::error::$(git log -1 --format='%h %s' "$c") has no 'Signed-off-by: $author' line"
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ] || { echo "Add it with: git rebase --signoff $BASE"; exit 1; }
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/gitleaks.sh git . --config .gitleaks.toml --redact --log-opts="$BASE..$HEAD"

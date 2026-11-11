@@ -1,0 +1,21 @@
+# Device records.
+# Some rows were checked on real hardware; rows marked `# unconfirmed` are
+# best-known values not yet verified.
+
+[[vendor]]
+vid = 0x19f7
+name = "RØDE"
+kind = "audio"
+
+[[device]]
+usb = "19f7:004a"
+name = "RØDE PodMic USB"
+kind = "audio"
+family = "none"
+
+[[device]]
+usb = "17e9:ff1a"
+name = "Elgato Prompter"
+kind = "prompter"
+family = "displaylink"
+caps = { display = "displaylink" }

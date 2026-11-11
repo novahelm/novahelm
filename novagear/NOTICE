@@ -1,0 +1,16 @@
+NovaGear
+Copyright 2026 The NovaHelm Authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles third-party files under their own licences:
+
+- Inter (crates/drivers/assets/fonts/Inter-*.ttf), Copyright 2020 The Inter Project Authors,
+  SIL Open Font License 1.1 (crates/drivers/assets/fonts/OFL.txt).
+- JetBrains Mono (crates/drivers/assets/fonts/JetBrainsMono-Bold.ttf), Copyright 2020 The JetBrains Mono
+  Project Authors, SIL Open Font License 1.1 (crates/drivers/assets/fonts/OFL.txt).
+- Lucide icons (crates/drivers/assets/icons/lucide/), Copyright Lucide Icons and Contributors, ISC License
+  (crates/drivers/assets/icons/lucide/LICENSE).
+
+The NovaHelm, NovaGear, NovaGuard, NovaLink and NovaCompute names and logos are trademarks of their owner.
+The Apache License does not grant permission to use them (section 6); see TRADEMARKS.md at the repository root.

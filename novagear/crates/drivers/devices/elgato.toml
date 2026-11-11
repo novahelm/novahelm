@@ -1,0 +1,149 @@
+# Device records. References read (not copied): python-elgato-streamdeck, python-elgato.
+# Some rows were checked on real hardware; rows marked `# unconfirmed` are
+# best-known values not yet verified.
+
+[[vendor]]
+vid = 0x0fd9
+name = "Elgato"
+kind = "other"
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:0060"
+name = "Stream Deck"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:0063"
+name = "Stream Deck Mini"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:006c"
+name = "Stream Deck XL"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:006d"
+name = "Stream Deck V2"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:0080"
+name = "Stream Deck MK.2"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: firmware tool/URL not verified (name and caps match the driver)
+[[device]]
+usb = "0fd9:0084"
+name = "Stream Deck +"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+[device.caps]
+dials = 4
+[device.caps.keys]
+count = 8
+px = 120
+[device.caps.strip]
+w = 800
+h = 100
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:0086"
+name = "Stream Deck Pedal"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:008f"
+name = "Stream Deck XL V2"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:0090"
+name = "Stream Deck Mini MK.2"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: model name and firmware tool/URL not verified
+[[device]]
+usb = "0fd9:009a"
+name = "Stream Deck Neo"
+kind = "stream_deck"
+family = "streamdeck"
+firmware = { policy = "vendor_tool", tool = "Elgato Stream Deck app", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: firmware tool/URL not verified
+[[device]]
+usb = "0fd9:0066"
+name = "Cam Link 4K"
+kind = "capture"
+family = "uvc"
+firmware = { policy = "vendor_tool", tool = "Elgato 4K Capture Utility", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: firmware tool/URL not verified
+[[device]]
+usb = "0fd9:009c"
+name = "Elgato 4K X"
+kind = "capture"
+family = "uvc"
+firmware = { policy = "vendor_tool", tool = "Elgato 4K Capture Utility", url = "https://www.elgato.com/downloads" }
+
+# Key Lights are found over mDNS; the accessory-info hardwareBoardType picks the record.
+[[device]]
+elgato_board = 53
+name = "Key Light"
+kind = "light"
+family = "keylight"
+firmware = { policy = "native" }
+[device.caps]
+colour = false
+kelvin_min = 2900
+kelvin_max = 7000
+
+# unconfirmed: board id, name and kelvin caps not yet seen on a real unit
+[[device]]
+elgato_board = 205
+name = "Key Light MK.2"
+kind = "light"
+family = "keylight"
+firmware = { policy = "native" }
+[device.caps]
+colour = false
+kelvin_min = 2900
+kelvin_max = 7000
+
+# unconfirmed: board id, name and kelvin caps not yet seen on a real unit
+[[device]]
+elgato_board = 210
+name = "Key Light Neo"
+kind = "light"
+family = "keylight"
+firmware = { policy = "native" }
+[device.caps]
+colour = false
+kelvin_min = 2900
+kelvin_max = 7000

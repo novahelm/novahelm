@@ -1,0 +1,1795 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NovaGear</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      /* NovaGuard's Apple system palette (novaguard/dashboard/src/styles/tokens.css), light and dark. */
+      :root {
+        color-scheme: light dark;
+        --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, sans-serif;
+        --bg: #f2f2f7; --surface: #ffffff; --surface-2: #f2f2f7;
+        --border: rgba(60, 60, 67, 0.16); --hairline: rgba(60, 60, 67, 0.12);
+        --text: #1d1d1f; --muted: #6e6e73; --accent: #007aff; --accent-text: #ffffff;
+        --hover: rgba(120, 120, 128, 0.12); --press: rgba(120, 120, 128, 0.2);
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 10px rgba(0, 0, 0, 0.04);
+        --ok: #248a3d; --ok-bg: rgba(52, 199, 89, 0.14); --ok-border: rgba(52, 199, 89, 0.3);
+        --warn: #b25000; --warn-bg: rgba(255, 149, 0, 0.14); --warn-border: rgba(255, 149, 0, 0.32);
+        --bad: #d70015; --bad-bg: rgba(255, 59, 48, 0.12); --bad-border: rgba(255, 59, 48, 0.3);
+        --neutral: #6e6e73; --neutral-bg: rgba(120, 120, 128, 0.12); --neutral-border: rgba(120, 120, 128, 0.2);
+        --tint-orange: #ff9500; --tint-blue: #007aff; --tint-indigo: #5856d6; --tint-green: #34c759; --tint-pink: #ff2d55; --tint-teal: #30b0c7;
+        --radius: 14px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1c1e; --surface: #2c2c2e; --surface-2: #3a3a3c;
+          --border: rgba(84, 84, 88, 0.6); --hairline: rgba(84, 84, 88, 0.45);
+          --text: #f5f5f7; --muted: #98989d; --accent: #0a84ff;
+          --hover: rgba(120, 120, 128, 0.2); --press: rgba(120, 120, 128, 0.32); --shadow: none;
+          --ok: #30d158; --ok-bg: rgba(48, 209, 88, 0.16); --ok-border: rgba(48, 209, 88, 0.32);
+          --warn: #ff9f0a; --warn-bg: rgba(255, 159, 10, 0.16); --warn-border: rgba(255, 159, 10, 0.34);
+          --bad: #ff453a; --bad-bg: rgba(255, 69, 58, 0.16); --bad-border: rgba(255, 69, 58, 0.34);
+          --neutral: #aeaeb2; --neutral-bg: rgba(120, 120, 128, 0.24); --neutral-border: rgba(120, 120, 128, 0.36);
+          --tint-orange: #ff9f0a; --tint-blue: #0a84ff; --tint-indigo: #5e5ce6; --tint-green: #30d158; --tint-pink: #ff375f; --tint-teal: #40c8e0;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+      header { display: flex; align-items: center; gap: 12px; padding: 20px 24px 4px; max-width: 1400px; }
+      .badge { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--warn-bg); color: var(--tint-orange); flex: none; }
+      header h1 { font-size: 17px; font-weight: 600; margin: 0; }
+      header .live { color: var(--muted); font-size: 12px; }
+      main { display: grid; gap: 16px; padding: 16px 24px 32px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); max-width: 1400px; }
+      section { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; min-width: 0; }
+      section.wide { grid-column: 1 / -1; }
+      h2 { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+      h2 .icon { width: 24px; height: 24px; border-radius: 6px; display: inline-grid; place-items: center; color: #fff; font-size: 13px; margin-right: 8px; vertical-align: middle; }
+      .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+      .row label { min-width: 84px; color: var(--muted); }
+      input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+      button, select, input, textarea { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 11px; }
+      button { cursor: pointer; transition: background .12s; }
+      button:hover { background: var(--hover); }
+      button:active { background: var(--press); }
+      button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .pill { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--neutral-border); background: var(--neutral-bg); color: var(--neutral); }
+      .pill.ready { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-border); }
+      .pill.busy { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-border); }
+      .light { border-top: 1px solid var(--hairline); padding-top: 10px; margin-top: 10px; }
+      .light:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+      .name { font-weight: 600; }
+      .muted { color: var(--muted); font-size: 12px; }
+      .deck { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+      .key { aspect-ratio: 1; border-radius: 12px; border: 2px solid transparent; display: flex; align-items: center; justify-content: center; text-align: center; font: 700 12px/1.2 var(--font-rounded); letter-spacing: .04em; cursor: pointer; padding: 4px; word-break: break-word; color: #fff; }
+      .key.sel { border-color: var(--accent); }
+      .key.pressed { filter: brightness(1.5); }
+      .key.empty { background: #000; color: var(--muted); font-weight: 400; }
+      .dials { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+      .dial { background: var(--surface-2); border: 2px solid transparent; border-radius: 12px; padding: 8px; text-align: center; cursor: pointer; font-size: 12px; }
+      .dial:hover { background: var(--hover); }
+      .dial.sel { border-color: var(--accent); }
+      .dial.pressed { filter: brightness(1.3); }
+      .dial .v { font: 600 14px/1.3 var(--font-rounded); }
+      .editor { border-top: 1px solid var(--hairline); margin-top: 12px; padding-top: 10px; }
+      .editor .row input[type=text] { flex: 1; min-width: 100px; }
+      textarea { width: 100%; min-height: 140px; resize: vertical; }
+      video { width: 100%; border-radius: 12px; background: #000; margin-top: 8px; display: none; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      td { padding: 6px 4px; border-top: 1px solid var(--hairline); }
+      tr:first-child td { border-top: 0; }
+      .banner { grid-column: 1 / -1; border-radius: var(--radius); padding: 10px 14px; border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--text); }
+      .banner strong { color: var(--warn); }
+      .banner ul { margin: 4px 0 0; padding-left: 18px; }
+      .pill.update { color: var(--accent); background: rgba(0, 122, 255, 0.12); border-color: rgba(0, 122, 255, 0.3); text-decoration: none; cursor: help; }
+      .logbox { max-height: 360px; overflow: auto; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; border-top: 1px solid var(--hairline); margin-top: 8px; }
+      .logline { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid var(--hairline); }
+      .logline .t { color: var(--muted); flex: none; }
+      .logline .lv { flex: none; width: 44px; font-weight: 600; }
+      .logline .lv.WARN { color: var(--warn); }
+      .logline .lv.ERROR { color: var(--bad); }
+      .logline .m { min-width: 0; overflow-wrap: anywhere; }
+
+      /* Tabs and the Modes view. The Modes view is dark, like the deck mock-ups. */
+      [hidden] { display: none !important; }
+      .tabs { display: flex; gap: 6px; padding: 8px 24px 0; max-width: 1400px; }
+      .tabs button { border-radius: 99px; background: transparent; border-color: transparent; color: var(--muted); font-weight: 600; }
+      .tabs button.on { background: var(--surface); color: var(--text); border-color: var(--border); }
+      .tabs .pill { margin-left: 6px; }
+      body.modes {
+        color-scheme: dark;
+        --font: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --bg: #0f1013; --surface: #1a1b1f; --surface-2: #26272c; --border: #34353b; --hairline: #2a2b31;
+        --text: #f4f4f5; --muted: #a1a1aa; --accent: #60a5fa; --accent-text: #0b0b0d;
+        --hover: rgba(255, 255, 255, 0.07); --press: rgba(255, 255, 255, 0.12); --shadow: none;
+        --ok: #34d399; --ok-bg: rgba(52, 211, 153, 0.14); --ok-border: rgba(52, 211, 153, 0.3);
+        --warn: #fbbf24; --warn-bg: rgba(245, 158, 11, 0.14); --warn-border: rgba(245, 158, 11, 0.34);
+        --bad: #f87171; --bad-bg: rgba(248, 113, 113, 0.14); --bad-border: rgba(248, 113, 113, 0.34);
+      }
+      .mv { display: grid; gap: 16px; padding: 12px 24px 40px; max-width: 1400px; }
+      .mv section { padding: 18px 20px; }
+      .mv h2 { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #71717a; font-weight: 700; }
+      .mv h3 { font-size: 14px; margin: 14px 0 6px; font-weight: 600; }
+      .savebar { position: sticky; top: 0; z-index: 5; display: flex; gap: 10px; align-items: center; background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius); padding: 8px 14px; backdrop-filter: blur(8px); }
+      .savebar span { flex: 1; }
+      button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+      button.danger { color: var(--bad); }
+      button.small, .btn.small { padding: 2px 8px; font-size: 12px; }
+      .btn { font: inherit; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 11px; cursor: pointer; display: inline-block; }
+      .btn:hover { background: var(--hover); }
+      .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 14px; border-radius: 99px; font-weight: 600; font-size: 12px; background: #1c1d22; color: var(--muted); border: 1px solid var(--hairline); cursor: pointer; }
+      .chip.sel { color: #fff; border-color: transparent; }
+      .chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+      .chip em { font-style: normal; font-size: 10px; color: var(--ok); }
+      .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 4px; }
+      .tools input[type=text] { width: 150px; }
+      .mgrid { display: grid; grid-template-columns: minmax(0, 600px) minmax(300px, 1fr); gap: 36px; align-items: start; margin-top: 14px; }
+      @media (max-width: 960px) { .mgrid { grid-template-columns: 1fr; } .mv { padding-left: 16px; padding-right: 16px; } }
+      .dev { background: #1a1b1f; border: 1px solid var(--hairline); border-radius: 28px; padding: 26px; display: grid; gap: 18px; box-shadow: inset 0 1px 0 #2c2d33, 0 24px 48px rgba(0, 0, 0, .45); }
+      .dkeys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+      .dk { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 3px #0b0b0d; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; color: #fff; text-align: center; padding: 4px; border: 0; font: inherit; }
+      .dk.empty { background: #0b0b0d; color: #52525b; font-size: 20px; }
+      .dk.sel { outline: 3px solid var(--accent); outline-offset: 3px; }
+      .dk.drop { outline: 3px dashed var(--accent); outline-offset: 3px; }
+      .dk .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .dk .bgph { position: absolute; inset: 0; background: repeating-linear-gradient(135deg, rgba(255,255,255,.06) 0 6px, transparent 6px 12px); }
+      .dk .lab { position: relative; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, .55); }
+      .dk .val { position: relative; font: 700 22px/1 var(--mono); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dk .val.dim { opacity: .55; }
+      .dk .ico { position: relative; opacity: .9; }
+      .dk img.ico { width: 38%; height: auto; max-height: 45%; object-fit: contain; }
+      .dk .bdg { position: absolute; top: 5px; right: 5px; font: 700 10px var(--mono); background: rgba(0, 0, 0, .6); padding: 1px 6px; border-radius: 99px; }
+      .dk .prog { position: absolute; left: 10px; right: 10px; bottom: 6px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .25); }
+      .dk .prog b { display: block; height: 4px; border-radius: 2px; background: #fff; }
+      .dk .two { position: absolute; top: 5px; left: 6px; font: 700 9px var(--mono); opacity: .7; }
+      .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; background: #0b0b0d; border-radius: 16px; padding: 5px; }
+      .seg { min-height: 92px; background: #15161a; border: 2px solid transparent; border-radius: 12px; padding: 8px 8px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; text-align: left; color: var(--text); font: inherit; min-width: 0; }
+      .seg:hover { background: #1c1d22; }
+      .seg.sel { border-color: var(--accent); }
+      .seg .k { font-size: 9px; font-weight: 700; letter-spacing: .1em; color: #71717a; text-transform: uppercase; }
+      .seg .l { font-size: 10px; font-weight: 600; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .seg .v { font: 700 18px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .seg .dots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+      .seg .dots i { width: 9px; height: 9px; border-radius: 2px; display: block; }
+      .seg .bar { height: 4px; border-radius: 2px; background: #3f3f46; margin-top: auto; }
+      .seg .bar b { display: block; height: 4px; border-radius: 2px; background: var(--accent); }
+      .seg.none { color: #52525b; justify-content: center; align-items: center; font-size: 18px; }
+      .knobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: 4px; }
+      .knobw { display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: 0; cursor: pointer; color: #d4d4d8; font: inherit; }
+      .knob { position: relative; width: 58px; height: 58px; border-radius: 50%; background: #26272c; box-shadow: 0 0 0 4px #121316, inset 0 2px 0 #34353b, 0 6px 12px rgba(0, 0, 0, .5); }
+      .knob::after { content: ""; position: absolute; left: 27px; top: 6px; width: 4px; height: 12px; border-radius: 2px; background: #d4d4d8; }
+      .knobw.sel .knob { box-shadow: 0 0 0 4px #121316, 0 0 0 7px var(--accent), 0 6px 12px rgba(0, 0, 0, .5); }
+      .knobw span { font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ed { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 16px 18px; }
+      .ed .title { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: #71717a; text-transform: uppercase; margin-bottom: 8px; }
+      .ed .row label { min-width: 76px; }
+      .ed .sub { border-left: 2px solid var(--hairline); margin: 6px 0 6px 4px; padding-left: 12px; }
+      .ed input[type=text], .ed input[type=number], .ed select { min-width: 0; }
+      .ed input[type=text] { flex: 1; min-width: 110px; }
+      .ed input[type=number] { width: 84px; }
+      .ed .acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+      .mv table td { vertical-align: top; }
+      .mv .mono { font-family: var(--mono); font-size: 12px; }
+      .apv { border: 1px solid var(--hairline); border-radius: 12px; padding: 12px 14px; margin: 8px 0; background: var(--surface-2); }
+      .apv.focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(96, 165, 250, .25); }
+      .apv .t { font-weight: 600; font-size: 14px; }
+      .apv .ln { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+      .pill.risk-high, .pill.risk-critical { color: var(--bad); background: var(--bad-bg); border-color: var(--bad-border); }
+      .pill.risk-medium { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-border); }
+      .tokenbox { border: 1px solid var(--warn-border); background: var(--warn-bg); border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+      .tokenbox code { display: block; overflow-wrap: anywhere; margin: 6px 0; font-family: var(--mono); }
+      dialog { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; max-width: 640px; width: calc(100vw - 32px); }
+      dialog::backdrop { background: rgba(0, 0, 0, .6); }
+      #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 14px; border-radius: 10px; display: none; max-width: 90vw; box-shadow: 0 4px 18px rgba(0,0,0,.25); }
+      @media (max-width: 420px) { header, main { padding-left: 16px; padding-right: 16px; } main { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="badge" aria-hidden="true"
+        ><svg
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+        >
+          <circle cx="10" cy="10" r="7.5" />
+          <circle cx="10" cy="10" r="2" fill="currentColor" stroke="none" /></svg
+      ></span>
+      <h1>NovaGear</h1>
+      <span class="live" id="live">connecting…</span>
+    </header>
+    <nav class="tabs" aria-label="Views">
+      <button id="tabOverview" class="on">Overview</button>
+      <button id="tabModes">
+        Modes<span id="tabApprovals" class="pill risk-medium" hidden></span>
+      </button>
+    </nav>
+    <main id="overview">
+      <div class="banner" id="netBanner" hidden role="alert">
+        <strong>Local Network is off for NovaGear.</strong> macOS is blocking local network access
+        for NovaGear, so it can't reach your lights. Open System Settings, Privacy &amp; Security,
+        Local Network, and switch NovaGear on.
+      </div>
+      <div class="banner" id="problemBanner" hidden role="alert"></div>
+      <section id="lights">
+        <h2>
+          <span
+            ><span class="icon" style="background:var(--tint-orange)" aria-hidden="true"
+              ><svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="8" cy="7" r="4" />
+                <path d="M6 13h4M7 15h2" /></svg></span
+            >Lights</span
+          >
+        </h2>
+        <div id="lightList" class="muted">Looking for Key Lights…</div>
+      </section>
+
+      <section id="deckSec">
+        <h2>
+          <span
+            ><span class="icon" style="background:var(--tint-indigo)" aria-hidden="true"
+              ><svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="3" width="5" height="4" rx="1" />
+                <rect x="9" y="3" width="5" height="4" rx="1" />
+                <rect x="2" y="9" width="5" height="4" rx="1" />
+                <rect x="9" y="9" width="5" height="4" rx="1" /></svg></span
+            >Stream Deck +</span
+          >
+          <span id="deckPill" class="pill">not found</span>
+        </h2>
+        <div class="row">
+          <button id="deckCtl">Let NovaGear drive the deck</button>
+        </div>
+        <div class="muted" id="deckNote">
+          While the Elgato Stream Deck app is running it draws on the deck too. Quit it before you
+          hand the deck to NovaGear.
+        </div>
+        <div class="row" id="pageBar"></div>
+        <div class="deck" id="keys"></div>
+        <div class="dials" id="dials"></div>
+        <div class="editor" id="editor" hidden></div>
+        <div class="editor">
+          <div class="row">
+            <button id="importSd">Import from the Stream Deck app</button>
+            <span class="muted"
+              >Turns your Elgato profiles into pages. Your current pages are kept as
+              config.json.bak.</span
+            >
+          </div>
+          <div class="row">
+            <label>OBS</label><input type="text" id="obsUrl" placeholder="ws://127.0.0.1:4455" />
+            <input
+              type="password"
+              id="obsPass"
+              placeholder="WebSocket password"
+              autocomplete="off"
+            />
+            <button id="obsSave">Save</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="promptSec">
+        <h2>
+          <span
+            ><span class="icon" style="background:var(--tint-blue)" aria-hidden="true"
+              ><svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 4h10M3 8h10M3 12h6" /></svg></span
+            >Prompter</span
+          >
+          <span id="prPill" class="pill">not found</span>
+        </h2>
+        <textarea id="script" placeholder="Paste your script…"></textarea>
+        <div class="row">
+          <label>Speed</label><input type="range" id="speed" min="5" max="400" /><span
+            id="speedV"
+          ></span>
+        </div>
+        <div class="row">
+          <label>Text size</label><input type="range" id="font" min="24" max="160" /><span
+            id="fontV"
+          ></span>
+        </div>
+        <div class="row">
+          <label>Mirror</label><input type="checkbox" id="mirror" /><span class="muted"
+            >for beam-splitter glass</span
+          >
+        </div>
+        <div class="row">
+          <button id="prOpen">Open prompter window</button>
+          <button id="prPlay">Play / pause</button>
+          <button id="prRestart">Restart</button>
+        </div>
+        <div class="muted">
+          The window finds the Prompter screen on its own in Chrome or Edge. In other browsers, drag
+          it there and press F.
+        </div>
+      </section>
+
+      <section id="mouseSec">
+        <h2>
+          <span
+            ><span class="icon" style="background:var(--tint-green)" aria-hidden="true"
+              ><svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="4.5" y="2" width="7" height="12" rx="3.5" />
+                <path d="M8 4.5v2" /></svg></span
+            >Mouse</span
+          >
+          <span id="mousePill" class="pill">not found</span>
+        </h2>
+        <div class="row"><label>DPI</label><span id="dpiNow" class="name">—</span></div>
+        <div class="row" id="dpiStages"></div>
+        <div class="row">
+          <label>Colour</label><input type="color" id="mouseColor" value="#00ff66" /><button
+            id="mouseColorSet"
+          >
+            Apply
+          </button>
+        </div>
+      </section>
+
+      <section id="capSec">
+        <h2>
+          <span
+            ><span class="icon" style="background:var(--tint-pink)" aria-hidden="true"
+              ><svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="4" width="9" height="8" rx="1.5" />
+                <path d="M11 7l3-2v6l-3-2" /></svg></span
+            >Capture</span
+          >
+        </h2>
+        <div id="capList" class="muted">No capture cards found.</div>
+        <video id="preview" autoplay muted playsinline></video>
+      </section>
+
+      <section class="wide" id="devices">
+        <h2>
+          <span
+            ><span class="icon" style="background:var(--tint-teal)" aria-hidden="true"
+              ><svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 4h10M3 8h10M3 12h10" /></svg></span
+            >All devices</span
+          >
+        </h2>
+        <table id="devTable"></table>
+        <div class="row">
+          <input type="checkbox" id="fwCheck" />
+          <label for="fwCheck" style="min-width:0">Check for firmware updates</label>
+          <span class="muted"
+            >Once a day, NovaGear reads Elgato's public update feed. It sends nothing about you or
+            your devices.</span
+          >
+        </div>
+      </section>
+
+      <section class="wide" id="logs">
+        <h2><span>Logs</span><span class="muted" id="logCount"></span></h2>
+        <div class="row">
+          <label for="logLevel">Level</label>
+          <select id="logLevel">
+            <option value="">All</option>
+            <option value="info">Info and worse</option>
+            <option value="warn">Warnings and errors</option>
+            <option value="error">Errors</option>
+          </select>
+          <input
+            type="text"
+            id="logQ"
+            placeholder="Search the log"
+            style="flex:1;min-width:140px"
+          />
+          <input type="checkbox" id="logFollow" checked />
+          <label for="logFollow" style="min-width:0">Follow live</label>
+          <button id="logCopy">Copy for a bug report</button>
+        </div>
+        <div class="muted">
+          Copies the last 500 lines, the version, your OS and a device list without serial numbers.
+        </div>
+        <div class="logbox" id="logBox"></div>
+      </section>
+    </main>
+    <div id="modesView" hidden>
+      <div class="mv">
+        <div class="savebar" id="saveBar" hidden role="status">
+          <span>You have changes that are not on the deck yet.</span>
+          <button id="discardBtn">Discard</button>
+          <button id="saveBtn" class="primary">Save to the deck</button>
+        </div>
+        <section id="modes" class="wide">
+          <h2>Modes</h2>
+          <div id="modeBar"></div>
+          <div class="mgrid">
+            <div id="deckWrap"></div>
+            <div id="mEditor"></div>
+          </div>
+        </section>
+        <section id="settings" class="wide">
+          <h2>Deck settings and rules</h2>
+          <div id="settingsBox"></div>
+        </section>
+        <section id="approvals" class="wide">
+          <h2><span>Approvals</span><span class="muted" id="apvNote"></span></h2>
+          <div id="apvList" class="muted">Nothing is waiting.</div>
+          <div class="muted">
+            Approving is a one second hold on the deck. This page can only deny.
+          </div>
+        </section>
+        <section id="templatesSec" class="wide">
+          <h2>Templates</h2>
+          <div id="tplList" class="muted"></div>
+        </section>
+        <section id="feedsSec" class="wide">
+          <h2><span>Feeds</span><span class="muted" id="feedNote"></span></h2>
+          <div id="feedList" class="muted">No feeds yet.</div>
+        </section>
+        <section id="clientsSec" class="wide">
+          <h2>Clients</h2>
+          <div class="muted">
+            Programs that may push feeds, ask for approvals and receive events. A token is shown
+            once, when you add the client.
+          </div>
+          <div id="clientList"></div>
+          <div class="row">
+            <input
+              type="text"
+              id="clientName"
+              placeholder="name, like novaguard"
+              maxlength="32"
+            /><button id="clientAdd">Add client</button>
+          </div>
+          <div id="tokenBox"></div>
+        </section>
+      </div>
+    </div>
+    <dialog id="tplDlg"></dialog>
+    <datalist id="dlScenes"></datalist>
+    <datalist id="dlInputs"></datalist>
+    <datalist id="dlFeeds"></datalist>
+    <datalist id="dlClients"></datalist>
+    <div id="toast"></div>
+
+    <script>
+      // The URL carries a single-use code, never the agent's token (it would land in browser
+      // history). Trade it for a session kept in this tab's sessionStorage, which windows this
+      // page opens inherit, and take the code out of the address bar.
+      const EXPIRED = '<section class="wide">This link has expired. Open the panel again from the NovaGear menu or with <code>novagear open</code>.</section>';
+      /// Trades a single-use code for a session; null when the agent says no (used, old, or unknown).
+      async function redeemCode(code) {
+        try {
+          const r = await fetch('/api/panel-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+          if (r.ok) return (await r.json()).token;
+        } catch {}
+        return null;
+      }
+      /// Where a link's `#code=…&modes` or `&approvals/<id>` asks to go; the code itself is never kept.
+      function readLink(hash) {
+        const g = hash.match(/(?:^#|&)(?:go=)?(devices|logs|modes|approvals|feeds|clients|templates)(?:[&\/]|$)/);
+        // An approval's Details link: `#code=<c>&approvals/<id>` opens that request.
+        const ap = hash.match(/(?:^#|&)approvals\/([A-Za-z0-9_-]{1,64})/);
+        return { code: (hash.match(/code=([0-9a-f]{32})/) || [])[1] || '', go: g ? g[1] : '', approval: ap ? ap[1] : '' };
+      }
+      // A code in the address wins over whatever session this tab kept. Only without one is the
+      // kept session used (it may be dead after the agent restarted; the first call finds out).
+      async function startSession() {
+        let link = readLink(location.hash);
+        history.replaceState(null, '', location.pathname);
+        if (!link.code) {
+          // The tab reloaded itself after taking a fresh code (see the hashchange handler below).
+          try { link = { ...link, ...JSON.parse(sessionStorage.getItem('novagear-next') || '{}') }; sessionStorage.removeItem('novagear-next'); } catch {}
+        }
+        if (link.go) goTo = link.go;
+        if (link.approval) focusApproval = link.approval;
+        if (link.code) {
+          const t = await redeemCode(link.code);
+          if (t) { try { sessionStorage.setItem('novagear-session', t); } catch {} return t; }
+          // The code was used or has expired: do not fall back to an older session.
+          try { sessionStorage.removeItem('novagear-session'); } catch {}
+          return '';
+        }
+        try { return sessionStorage.getItem('novagear-session') || ''; } catch { return ''; }
+      }
+      let token = '', goTo = '', focusApproval = '', dead = false, events = null;
+      /// The session is over (401): stop everything that talks to the agent, forget the session,
+      /// and say how to get a new one. Nothing retries after this.
+      function sessionEnded() {
+        if (dead) return;
+        dead = true; token = '';
+        try { sessionStorage.removeItem('novagear-session'); } catch {}
+        events?.close();
+        const unsaved = typeof dirty !== 'undefined' && dirty;
+        // Shown whichever tab was open: the Modes view is hidden while the message is.
+        document.querySelector('main').innerHTML = EXPIRED + (unsaved ? '<section class="wide">Edits you had not saved on the Modes tab were not sent to the deck and are lost.</section>' : '');
+        $('overview').hidden = false; $('modesView').hidden = true; document.body.classList.remove('modes');
+        $('live').textContent = 'session ended';
+      }
+      const api = (path, opts = {}) => {
+        if (dead) return Promise.reject(new Error('This session has ended.'));
+        return fetch('/api' + path, {
+          ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) }
+        }).then(async r => {
+          if (r.status === 401) { sessionEnded(); throw new Error('This session has ended.'); }
+          const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.error || r.statusText); return b;
+        });
+      };
+      /// Runs `fn` every `ms` at the soonest: the next run is scheduled when the last one is done
+      /// (a slow agent never gets calls piled on it), a failure doubles the wait up to a minute,
+      /// and it stops for good when the session ends.
+      function poll(fn, ms, when = () => true) {
+        let delay = ms;
+        const tick = async () => {
+          if (dead) return;
+          if (when()) { try { await fn(); delay = ms; } catch { delay = Math.min(delay * 2, 60000); } }
+          setTimeout(tick, delay);
+        };
+        setTimeout(tick, ms);
+      }
+      /// `fn` at most once per `ms`, never two at a time, and a call that comes while it runs or cools
+      /// down is merged into one run after. Used for what an event from the agent asks to reload: a
+      /// burst of events is one reload, not one each.
+      function coalesced(fn, ms) {
+        let timer = null, busy = false, again = false, last = 0;
+        const schedule = () => { if (timer || dead) return; timer = setTimeout(run, Math.max(100, ms - (Date.now() - last))); };
+        const run = async () => {
+          timer = null;
+          if (dead) return;
+          if (busy) { again = true; return; }
+          busy = true; last = Date.now();
+          try { await fn(); } catch {} finally { busy = false; if (again) { again = false; schedule(); } }
+        };
+        return schedule;
+      }
+      // A fresh link opened in a tab that already shows the panel changes only the address's
+      // hash, so the page does not reload. Take the code anyway and start over with it.
+      window.addEventListener('hashchange', async () => {
+        const link = readLink(location.hash);
+        if (!link.code) return;
+        history.replaceState(null, '', location.pathname);
+        const t = await redeemCode(link.code);
+        if (!t) { if (!dead) toast('That link was already used or has expired.'); return; }
+        // Unsaved edits would be lost by the reload: ask first, and change nothing if refused.
+        if (typeof dirty !== 'undefined' && dirty) {
+          if (!confirm('A new link was opened. Reload with it and lose your unsaved edits?')) return;
+          dirty = false;
+        }
+        try { sessionStorage.setItem('novagear-session', t); sessionStorage.setItem('novagear-next', JSON.stringify({ go: link.go, approval: link.approval })); } catch {}
+        location.reload();
+      });
+      const act = a => api('/action', { method: 'POST', body: JSON.stringify(a) }).catch(toast);
+      const $ = id => document.getElementById(id);
+      const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); kids.forEach(k => e.append(k)); return e; };
+
+      function toast(e) { if (dead) return; const t = $('toast'); t.textContent = e.message || e; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 4000); }
+
+      let devices = [], status = {}, config = null, prompter = null, selected = null, deckPage = null;
+
+      const ACTIONS = {
+        none: '— nothing —', page_go: 'Go to page', page_back: 'Back',
+        open_app: 'Open app', open_url: 'Open website', type_text: 'Type text', hotkey: 'Press keys',
+        light_toggle: 'Toggle lights', light_brightness_step: 'Light brightness', light_kelvin_step: 'Light warmth',
+        volume_step: 'Volume', mic_volume_step: 'Mic volume', mute_toggle: 'Mute', mic_mute_toggle: 'Mute mic',
+        obs_scene: 'OBS scene', obs_record_toggle: 'OBS record', obs_stream_toggle: 'OBS stream',
+        prompter_play_pause: 'Prompter play/pause', prompter_restart: 'Prompter restart', prompter_speed_step: 'Prompter speed',
+        mouse_dpi_step: 'Next DPI stage', deck_brightness_step: 'Deck brightness', placeholder: 'Not supported yet'
+      };
+      const STEPS = { light_brightness_step: 2, light_kelvin_step: 100, prompter_speed_step: 5, mouse_dpi_step: 1, deck_brightness_step: 5, volume_step: 3, mic_volume_step: 3 };
+      // The one setting each parameterised action takes: [field, input kind].
+      const PARAMS = { page_go: ['page', 'page'], open_app: ['path', 'text'], open_url: ['url', 'text'], type_text: ['text', 'text'], hotkey: ['keys', 'text'], obs_scene: ['scene', 'text'], placeholder: ['note', 'text'] };
+      const HINTS = { open_app: '/Applications/Notes.app', open_url: 'https://…', type_text: 'Text to type', hotkey: 'cmd+shift+4', obs_scene: 'Scene name' };
+
+      let editPage = null;
+
+      // The page editor works on the start mode's pages; the agent keeps no top-level pages.
+      const startMode = () => config.modes.find(m => m.id === config.start_mode) ?? config.modes[0];
+      const currentPage = () => startMode().pages.find(p => p.name === editPage) || startMode().pages[0];
+      // Pictures come from GET /api/images/<name> with the session in a header, and are shown from
+      // blob URLs, so no token is ever part of a URL. name -> object URL, '' while loading, null
+      // when the agent has no such image.
+      const blobs = new Map();
+      const repaintPictures = debounce(() => { if (typeof renderDevice === 'function' && draft && tab === 'modes') renderDevice(); if (typeof renderDeck === 'function' && config && !document.activeElement?.matches?.('input, select, textarea')) renderDeck(); }, 50);
+      async function fetchPicture(name) {
+        blobs.set(name, '');
+        try {
+          const r = await fetch('/api/images/' + encodeURIComponent(name), { headers: { 'Authorization': 'Bearer ' + token } });
+          if (r.status === 401) return sessionEnded();
+          const type = (r.headers.get('content-type') || '').split(';')[0];
+          if (!r.ok || !/^image\/(png|jpeg|gif|svg\+xml)$/.test(type)) { blobs.set(name, null); return; }
+          const made = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+          if (blobs.get(name)) URL.revokeObjectURL(blobs.get(name));
+          blobs.set(name, made);
+          repaintPictures();
+        } catch { blobs.set(name, null); }
+      }
+      /// An <img> for the named picture, or null while it loads (a repaint follows) or if there is none.
+      function picture(name, props = {}) {
+        const url = localImg[name] || blobs.get(name);
+        if (url === undefined && !dead) fetchPicture(name);
+        return url ? el('img', { src: url, alt: '', ...props }) : null;
+      }
+
+      /// A select for the action plus the input its one setting needs; get() builds the action.
+      function actionEditor(current, onlySteps) {
+        const sel = el('select');
+        for (const [k, v] of Object.entries(ACTIONS)) {
+          if (onlySteps && !(k in STEPS) && k !== 'none') continue;
+          if (k === 'placeholder' && current?.do !== 'placeholder') continue;
+          sel.append(el('option', { value: k, textContent: v, selected: (current?.do || 'none') === k }));
+        }
+        const box = el('span', { className: 'row', style: 'margin:0' });
+        let field = null, enter = null;
+        const draw = () => {
+          box.replaceChildren(sel);
+          field = enter = null;
+          const p = PARAMS[sel.value];
+          if (p) {
+            const [name, kind] = p;
+            const val = current?.do === sel.value ? (current[name] ?? '') : '';
+            if (kind === 'page') {
+              field = el('select');
+              for (const pg of startMode().pages) field.append(el('option', { value: pg.name, textContent: pg.name, selected: pg.name === val }));
+            } else {
+              field = el('input', { type: 'text', value: val, placeholder: HINTS[sel.value] || '', disabled: sel.value === 'placeholder' });
+            }
+            box.append(field);
+            if (sel.value === 'type_text') {
+              enter = el('input', { type: 'checkbox', checked: !!(current?.do === 'type_text' && current.enter), title: 'Press Return after' });
+              box.append(enter, el('span', { className: 'muted', textContent: 'then Return' }));
+            }
+          }
+        };
+        sel.onchange = draw;
+        draw();
+        return {
+          elem: box,
+          get() {
+            const v = sel.value;
+            if (v === 'none') return null;
+            if (v in STEPS) return { do: v, step: current?.do === v && current.step ? current.step : STEPS[v] };
+            const a = { do: v };
+            if (PARAMS[v]) a[PARAMS[v][0]] = field.value;
+            if (enter) a.enter = enter.checked;
+            return a;
+          }
+        };
+      }
+
+      function pill(elm, status) {
+        if (!status) { elm.className = 'pill'; elm.textContent = 'not found'; return; }
+        elm.className = 'pill ' + status.state;
+        elm.textContent = status.state === 'busy' ? 'busy' : status.state;
+        elm.title = status.reason || '';
+      }
+
+      function debounce(fn, ms) { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; }
+
+      function renderLights() {
+        const lights = devices.filter(d => d.kind === 'light');
+        const box = $('lightList');
+        if (!lights.length) { box.className = 'muted'; box.textContent = 'Looking for Key Lights…'; return; }
+        // Don't rebuild while a slider is being dragged.
+        if (box.contains(document.activeElement) && document.activeElement.type === 'range') return;
+        box.className = ''; box.replaceChildren();
+        if (lights.length > 1) {
+          const anyOn = lights.some(l => l.state.on);
+          box.append(el('div', { className: 'row' }, el('button', { textContent: anyOn ? 'All off' : 'All on', onclick: () => act({ do: 'light_set', on: !anyOn }) })));
+        }
+        for (const l of lights) {
+          const s = l.state;
+          const bright = el('input', { type: 'range', min: 3, max: 100, value: s.brightness ?? 50 });
+          const kel = el('input', { type: 'range', min: 2900, max: 7000, step: 50, value: s.kelvin ?? 5000 });
+          const bv = el('span', { textContent: (s.brightness ?? '–') + '%' }), kv = el('span', { textContent: (s.kelvin ?? '–') + 'K' });
+          const send = debounce(() => act({ do: 'light_set', id: l.id, brightness: +bright.value, kelvin: +kel.value }), 80);
+          bright.oninput = () => { bv.textContent = bright.value + '%'; send(); };
+          kel.oninput = () => { kv.textContent = kel.value + 'K'; send(); };
+          box.append(el('div', { className: 'light' },
+            el('div', { className: 'row' },
+              el('span', { className: 'name', textContent: l.name }),
+              el('button', { className: s.on ? 'on' : '', textContent: s.on ? 'On' : 'Off', onclick: () => act({ do: 'light_set', id: l.id, on: !s.on }) }),
+              el('button', { textContent: 'Identify', onclick: () => api(`/lights/${encodeURIComponent(l.id)}/identify`, { method: 'POST' }).catch(toast) }),
+              el('span', { className: 'muted', textContent: l.status.state === 'busy' ? l.status.reason : (s.address || '') })),
+            el('div', { className: 'row' }, el('label', { textContent: 'Brightness' }), bright, bv),
+            el('div', { className: 'row' }, el('label', { textContent: 'Warmth' }), kel, kv)));
+        }
+      }
+
+      function renderDeck() {
+        const deck = devices.find(d => d.kind === 'stream_deck');
+        pill($('deckPill'), deck?.status);
+        if (!config) return;
+        const ctl = $('deckCtl');
+        ctl.textContent = config.deck_control ? 'NovaGear is driving the deck (click to hand back)' : 'Let NovaGear drive the deck';
+        ctl.className = config.deck_control ? 'on' : '';
+        if (!startMode().pages.some(p => p.name === editPage)) editPage = deckPage || config.start_page;
+        const page = currentPage();
+
+        // Page picker: which page to edit, whether it shows on the deck now, add / rename / remove.
+        const bar = $('pageBar'); bar.replaceChildren();
+        const pick = el('select', { onchange: () => { editPage = pick.value; selected = null; renderDeck(); } });
+        for (const p of startMode().pages) pick.append(el('option', { value: p.name, textContent: p.name + (p.name === deckPage ? '  ● on deck' : '') + (p.name === config.start_page ? '  (start)' : ''), selected: p.name === page.name }));
+        const savePages = () => api('/config', { method: 'PUT', body: JSON.stringify(config) }).then(load).catch(toast);
+        bar.append(el('label', { textContent: 'Page' }), pick,
+          el('button', { textContent: 'Show on deck', onclick: () => act({ do: 'page_go', page: page.name }) }),
+          el('button', { textContent: 'New', onclick: () => {
+            const name = prompt('Name for the new page');
+            if (!name || startMode().pages.some(p => p.name === name)) return;
+            startMode().pages.push({ name, keys: [], dials: [] }); editPage = name; savePages();
+          } }),
+          el('button', { textContent: 'Rename', onclick: () => {
+            const name = prompt('New name', page.name);
+            if (!name || name === page.name || startMode().pages.some(p => p.name === name)) return;
+            // Keys that go to this page follow the rename.
+            for (const p of startMode().pages) for (const k of [...p.keys, ...p.dials]) for (const a of [k?.action, k?.press, k?.turn_left, k?.turn_right]) if (a?.do === 'page_go' && a.page === page.name) a.page = name;
+            if (config.start_page === page.name) config.start_page = name;
+            page.name = name; editPage = name; savePages();
+          } }),
+          el('button', { textContent: 'Make start page', disabled: page.name === config.start_page, onclick: () => { config.start_page = page.name; savePages(); } }),
+          el('button', { textContent: 'Remove', disabled: startMode().pages.length < 2, onclick: () => {
+            if (!confirm(`Remove the page "${page.name}"?`)) return;
+            startMode().pages = startMode().pages.filter(p => p !== page); editPage = null; savePages();
+          } }));
+
+        while (page.keys.length < 8) page.keys.push(null);
+        while (page.dials.length < 4) page.dials.push(null);
+        const keys = $('keys'); keys.replaceChildren();
+        for (let i = 0; i < 8; i++) {
+          const k = page.keys[i];
+          const cell = el('div', {
+            className: 'key' + (k ? '' : ' empty') + (selected?.t === 'key' && selected.i === i ? ' sel' : ''),
+            style: k ? `background:${k.color}` : '', id: 'key' + i,
+            title: k ? (ACTIONS[k.action.do] || k.action.do) + (k.action.do === 'placeholder' ? ': ' + k.action.note : '') : 'Empty key',
+            onclick: () => { selected = { t: 'key', i }; renderDeck(); }
+          });
+          if (k?.icon) { const im = picture(k.icon, { style: 'max-width:70%;max-height:60%;display:block;margin:0 auto 2px' }); if (im) cell.append(im); }
+          cell.append(el('span', { textContent: k ? k.label : '+' }));
+          cell.style.flexDirection = 'column';
+          keys.append(cell);
+        }
+        const dials = $('dials'); dials.replaceChildren();
+        for (let i = 0; i < 4; i++) {
+          const d = page.dials[i];
+          const what = d?.turn ? (ACTIONS[d.turn.do] || d.turn.do) : (d?.turn_left || d?.turn_right) ? 'Keys left / right' : '—';
+          dials.append(el('div', { className: 'dial' + (selected?.t === 'dial' && selected.i === i ? ' sel' : ''), id: 'dial' + i,
+            onclick: () => { selected = { t: 'dial', i }; renderDeck(); } },
+            el('div', { className: 'muted', textContent: d ? d.label : 'dial ' + (i + 1) }),
+            el('div', { className: 'v', textContent: what })));
+        }
+        renderEditor(page);
+      }
+
+      function renderEditor(page) {
+        const ed = $('editor');
+        if (!selected) { ed.hidden = true; return; }
+        ed.hidden = false; ed.replaceChildren();
+        const save = () => api('/config', { method: 'PUT', body: JSON.stringify(config) }).then(load).catch(toast);
+        if (selected.t === 'key') {
+          const k = page.keys[selected.i] || { label: '', color: '#1e2230', action: null };
+          const label = el('input', { type: 'text', value: k.label, maxLength: 24 });
+          const color = el('input', { type: 'color', value: k.color });
+          const action = actionEditor(k.action, false);
+          ed.append(el('div', { className: 'muted', textContent: `${page.name} · key ${selected.i + 1}` + (k.icon ? ' · has an icon' : '') }),
+            el('div', { className: 'row' }, el('label', { textContent: 'Label' }), label, color),
+            el('div', { className: 'row' }, el('label', { textContent: 'Press' }), action.elem),
+            el('div', { className: 'row' },
+              el('button', { textContent: 'Save', onclick: () => {
+                const a = action.get();
+                page.keys[selected.i] = a ? { ...k, label: label.value, color: color.value, icon: k.icon, action: a } : null;
+                save();
+              } }),
+              el('button', { textContent: 'Try it', onclick: () => { const a = action.get(); if (a) act(a); } })));
+        } else {
+          const d = page.dials[selected.i] || { label: '', turn: null, press: null };
+          const label = el('input', { type: 'text', value: d.label, maxLength: 12 });
+          const turn = actionEditor(d.turn, true), left = actionEditor(d.turn_left, false), right = actionEditor(d.turn_right, false), press = actionEditor(d.press, false);
+          ed.append(el('div', { className: 'muted', textContent: `${page.name} · dial ${selected.i + 1}` }),
+            el('div', { className: 'row' }, el('label', { textContent: 'Label' }), label),
+            el('div', { className: 'row' }, el('label', { textContent: 'Turn' }), turn.elem),
+            el('div', { className: 'muted', textContent: 'Or a separate action for each click left and right, such as hotkeys (used when Turn is “nothing”):' }),
+            el('div', { className: 'row' }, el('label', { textContent: 'Left' }), left.elem),
+            el('div', { className: 'row' }, el('label', { textContent: 'Right' }), right.elem),
+            el('div', { className: 'row' }, el('label', { textContent: 'Press' }), press.elem),
+            el('div', { className: 'row' }, el('button', { textContent: 'Save', onclick: () => {
+              page.dials[selected.i] = { label: label.value, turn: turn.get(), turn_left: left.get() || undefined, turn_right: right.get() || undefined, press: press.get() };
+              save();
+            } })));
+        }
+      }
+
+      function renderPrompter() {
+        pill($('prPill'), devices.find(d => d.kind === 'prompter')?.status);
+        if (!config) return;
+        const p = config.prompter;
+        if (document.activeElement !== $('script')) $('script').value = p.script;
+        $('speed').value = p.speed; $('speedV').textContent = p.speed + ' px/s';
+        $('font').value = p.font_size; $('fontV').textContent = p.font_size + ' px';
+        $('mirror').checked = p.mirror;
+        $('prPlay').className = prompter?.playing ? 'on' : '';
+      }
+
+      const savePrompter = debounce(() => {
+        config.prompter = { script: $('script').value, speed: +$('speed').value, font_size: +$('font').value, mirror: $('mirror').checked };
+        api('/config', { method: 'PUT', body: JSON.stringify(config) }).catch(toast);
+      }, 300);
+      ['script', 'speed', 'font', 'mirror'].forEach(id => $(id).addEventListener('input', () => {
+        $('speedV').textContent = $('speed').value + ' px/s'; $('fontV').textContent = $('font').value + ' px'; savePrompter();
+      }));
+      $('prOpen').onclick = () => window.open('/prompter', 'novagear-prompter', 'width=1024,height=600');
+      $('prPlay').onclick = () => act({ do: 'prompter_play_pause' });
+      $('prRestart').onclick = () => act({ do: 'prompter_restart' });
+
+      function renderMouse() {
+        const m = devices.find(d => d.kind === 'mouse' && d.vendor.toLowerCase().includes('razer')) || devices.find(d => d.kind === 'mouse');
+        pill($('mousePill'), m?.status);
+        $('dpiNow').textContent = m?.state?.dpi ? m.state.dpi + ' dpi' : (m?.status?.reason || '—');
+        const stages = $('dpiStages'); stages.replaceChildren(el('label', { textContent: 'Stages' }));
+        for (const s of config?.dpi_stages || []) {
+          stages.append(el('button', { className: m?.state?.dpi === s ? 'on' : '', textContent: s, onclick: () => act({ do: 'mouse_dpi', dpi: s }) }));
+        }
+      }
+      $('mouseColorSet').onclick = () => act({ do: 'mouse_color', color: $('mouseColor').value });
+
+      let previewing = null;
+      async function startPreview(name) {
+        const v = $('preview');
+        if (previewing) { previewing.getTracks().forEach(t => t.stop()); previewing = null; v.style.display = 'none'; }
+        try {
+          // Labels are hidden until the page has camera permission once.
+          let cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+          if (!cams.some(c => c.label)) { (await navigator.mediaDevices.getUserMedia({ video: true })).getTracks().forEach(t => t.stop()); cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); }
+          const cam = cams.find(c => c.label.toLowerCase().includes(name.toLowerCase()));
+          if (!cam) throw new Error(`${name} isn't offered as a camera by the browser`);
+          previewing = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: cam.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } }, audio: false });
+          v.srcObject = previewing; v.style.display = 'block';
+        } catch (e) { toast(e); }
+      }
+
+      function renderCapture() {
+        const caps = devices.filter(d => d.kind === 'capture');
+        const box = $('capList');
+        if (!caps.length) { box.className = 'muted'; box.textContent = 'No capture cards found.'; return; }
+        box.className = ''; box.replaceChildren(...caps.map(c => el('div', { className: 'row' },
+          el('span', { className: 'name', textContent: c.name }),
+          el('button', { textContent: 'Preview', onclick: () => startPreview(c.name) }))));
+      }
+
+      const copyText = async (text, done) => {
+        try { await navigator.clipboard.writeText(text); toast(done); }
+        catch { toast('Could not copy. Your browser blocked clipboard access.'); }
+      };
+
+      // What "Copy device details" copies: the details (never a serial or path) and a draft
+      // record, ready to paste into a "Request a device" issue or a devices.toml.
+      const deviceReport = (state) =>
+        '### Device details\n\n```json\n' + JSON.stringify(state.details || {}, null, 2) + '\n```\n' +
+        (state.draft ? '\n### Draft record\n\n```toml\n' + state.draft + '```\n' : '');
+
+      function firmwareCell(d) {
+        const f = d.firmware, td = el('td', {});
+        if (!f) return td;
+        if (f.installed) td.append(el('span', { className: 'muted', textContent: f.installed, title: f.installed_is_device_version ? 'The USB device version; the device does not report a firmware string.' : 'Installed firmware' }));
+        if (f.update_available) {
+          const tip = (f.latest ? 'Latest: ' + f.latest + '. ' : '') + (f.source ? 'Source: ' + f.source : '');
+          td.append(' ', el('span', { className: 'pill update', textContent: 'Update available', title: tip }));
+        }
+        if (f.policy === 'vendor_tool' || f.policy === 'fwupd') {
+          const how = f.tool ? 'Update with ' + f.tool : 'Update with the vendor tool';
+          // Only ever link to https pages.
+          if (f.url && /^https:\/\//.test(f.url)) td.append(' ', el('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer', className: 'muted', textContent: how }));
+          else td.append(' ', el('span', { className: 'muted', textContent: how }));
+        }
+        return td;
+      }
+
+      function renderTable() {
+        $('devTable').replaceChildren(...devices.map(d => {
+          const nameCell = el('td', { textContent: d.name });
+          if (d.state && d.state.unknown) {
+            nameCell.append(' ', el('button', { textContent: 'Copy device details', onclick: () => copyText(deviceReport(d.state), 'Device details copied. Paste them into a "Request a device" issue.') }));
+          }
+          return el('tr', {},
+            el('td', { textContent: d.kind.replace('_', ' ') }), nameCell,
+            el('td', { textContent: d.vendor }), firmwareCell(d),
+            el('td', {}, el('span', { className: 'pill ' + d.status.state, textContent: d.status.state, title: d.status.reason || '' })));
+        }));
+      }
+
+      function renderStatus() {
+        $('netBanner').hidden = !status.network_blocked;
+        const pb = $('problemBanner'), probs = status.problems || [];
+        pb.hidden = !probs.length;
+        pb.replaceChildren(...(probs.length ? [el('strong', { textContent: 'NovaGear found a problem:' }), el('ul', {}, ...probs.map(p => el('li', { textContent: p })))] : []));
+        if (config && document.activeElement !== $('fwCheck')) $('fwCheck').checked = config.firmware_check !== false;
+      }
+      $('fwCheck').onchange = () => {
+        if (!config) return;
+        config.firmware_check = $('fwCheck').checked;
+        api('/config', { method: 'PUT', body: JSON.stringify(config) }).then(load).catch(toast);
+      };
+
+      // Logs. Rows are plain text, newest first.
+      const LEVELS = { TRACE: 0, DEBUG: 1, INFO: 2, WARN: 3, ERROR: 4 };
+      const logLine = l => {
+        const f = l.fields || {};
+        const extra = Object.entries(f).filter(([k]) => k !== 'message').map(([k, v]) => k + '=' + v).join(' ');
+        return { t: (l.timestamp || '').replace('T', ' ').replace(/\.\d+Z$/, 'Z'), lv: (l.level || '').toUpperCase(), m: (f.message || '') + (extra ? ' ' + extra : '') };
+      };
+      const logRow = l => { const r = logLine(l); return el('div', { className: 'logline' }, el('span', { className: 't', textContent: r.t }), el('span', { className: 'lv ' + r.lv, textContent: r.lv }), el('span', { className: 'm', textContent: r.m })); };
+      function logQuery(limit) {
+        const p = new URLSearchParams({ limit });
+        if ($('logLevel').value) p.set('level', $('logLevel').value);
+        if ($('logQ').value) p.set('q', $('logQ').value);
+        return '/logs?' + p;
+      }
+      function countLogs() { const n = $('logBox').children.length; $('logCount').textContent = n + ' line' + (n === 1 ? '' : 's'); }
+      async function loadLogs() {
+        const lines = await api(logQuery(500));
+        $('logBox').replaceChildren(...lines.map(logRow));
+        countLogs();
+      }
+      const reloadLogs = debounce(() => loadLogs().catch(toast), 250);
+      $('logLevel').onchange = reloadLogs; $('logQ').oninput = reloadLogs;
+      function liveLog(l) {
+        if (!$('logFollow').checked) return;
+        const min = LEVELS[($('logLevel').value || '').toUpperCase()] ?? 0, q = $('logQ').value.toLowerCase();
+        if ((LEVELS[(l.level || '').toUpperCase()] ?? 0) < min) return;
+        if (q && !JSON.stringify(l).toLowerCase().includes(q)) return;
+        const box = $('logBox');
+        box.prepend(logRow(l));
+        while (box.children.length > 500) box.lastChild.remove();
+        countLogs();
+      }
+      // Device ids carry serial numbers, so the report never names them, and any serial-like
+      // piece of an id is blanked out of the log text too.
+      function scrub(text) {
+        const bits = new Set();
+        for (const d of devices) {
+          bits.add(d.id);
+          for (const b of d.id.split('-').slice(1)) if (b.length >= 6) bits.add(b);
+        }
+        for (const b of [...bits].sort((a, c) => c.length - a.length)) text = text.split(b).join('<device>');
+        return text;
+      }
+      function deviceSummary(d) {
+        const usb = d.usb ? ' usb ' + d.usb.vid.toString(16).padStart(4, '0') + ':' + d.usb.pid.toString(16).padStart(4, '0') : '';
+        return `${d.kind}  ${d.name}  ${d.vendor}${usb}  ${d.status.state}`;
+      }
+      $('logCopy').onclick = async () => {
+        try {
+          const lines = await api('/logs?limit=500');
+          const text = [
+            'NovaGear bug report',
+            'version: ' + (status.version || 'unknown'),
+            'os: ' + navigator.userAgent,
+            '', 'devices:', ...devices.map(deviceSummary),
+            '', 'log (newest first):',
+            ...lines.map(l => { const r = logLine(l); return `${r.t} ${r.lv} ${scrub(r.m)}`; })
+          ].join('\n');
+          copyText(text, 'Copied the last ' + lines.length + ' log lines and your device list.');
+        } catch (e) { toast(e); }
+      };
+
+      function render() { renderStatus(); renderLights(); renderDeck(); renderPrompter(); renderMouse(); renderCapture(); renderTable(); }
+
+      async function load() {
+        [devices, config, prompter, deckPage, status] = await Promise.all([api('/devices'), api('/config'), api('/prompter').then(p => p.run), api('/deck').then(d => d.page), api('/status').catch(() => ({}))]);
+        if (document.activeElement !== $('obsUrl')) $('obsUrl').value = config.obs?.url || '';
+        render();
+        if (typeof modesLoaded === 'function') modesLoaded();
+      }
+
+      $('importSd').onclick = async () => {
+        if (!confirm('Replace the deck pages with your Stream Deck app profiles? The current ones are kept as config.json.bak.')) return;
+        try {
+          const r = await api('/import/streamdeck', { method: 'POST' });
+          const missing = (r.placeholders || []).map(([n, c]) => `${n} ×${c}`).join(', ');
+          toast(`Imported ${r.pages} pages and ${r.icons} icons.` + (missing ? ` Not supported yet: ${missing}.` : ''));
+          editPage = r.start_page; selected = null; load();
+        } catch (e) { toast(e); }
+      };
+      $('obsSave').onclick = () => {
+        config.obs = { url: $('obsUrl').value.trim() || 'ws://127.0.0.1:4455', password: $('obsPass').value || config.obs?.password || '' };
+        $('obsPass').value = '';
+        api('/config', { method: 'PUT', body: JSON.stringify(config) }).then(() => toast('OBS settings saved.')).catch(toast);
+      };
+      $('deckCtl').onclick = () => { config.deck_control = !config.deck_control; api('/config', { method: 'PUT', body: JSON.stringify(config) }).then(load).catch(toast); };
+
+      function flash(id) { const e = $(id); if (!e) return; e.classList.add('pressed'); setTimeout(() => e.classList.remove('pressed'), 180); }
+
+      function connect() {
+        const es = events = new EventSource('/api/events?token=' + encodeURIComponent(token));
+        let lastOpen = 0;
+        es.onopen = () => {
+          $('live').textContent = 'live';
+          // A stream that keeps opening and dropping must not reload everything each time.
+          if (Date.now() - lastOpen < 3000) return;
+          lastOpen = Date.now();
+          load().then(() => { if (goTo) { goToSection(goTo); goTo = ''; } }).catch(toast); loadLogs().catch(() => {});
+        };
+        es.onerror = () => {
+          if (!dead) $('live').textContent = 'agent not reachable, retrying…';
+          // A refused stream (a dead session) is closed for good and the browser will not retry it.
+          // Ask once with the header: a 401 ends the session; anything else gets a slow retry.
+          if (es.readyState === EventSource.CLOSED && !dead) {
+            api('/status').then(() => setTimeout(() => { if (!dead && events === es) connect(); }, 5000)).catch(() => {});
+          }
+        };
+        const refresh = coalesced(load, 1000), refreshApprovals = coalesced(() => loadApprovals(), 1000);
+        es.onmessage = m => {
+          const ev = JSON.parse(m.data);
+          if (ev.type === 'input') {
+            const i = ev.data;
+            if (i.input === 'key' && i.down) flash('key' + i.index);
+            if (i.input === 'dial_turn' || i.input === 'dial_press') flash('dial' + i.index);
+          } else if (ev.type === 'log') liveLog(ev.data);
+          else if (ev.type === 'prompter') { prompter = ev.data; renderPrompter(); }
+          else if (ev.type === 'error') toast(ev.data);
+          else if (ev.type === 'approval') { refresh(); refreshApprovals(); }
+          else refresh();
+        };
+      }
+
+      startSession().then(t => {
+        token = t;
+        if (!token) { dead = true; document.querySelector('main').innerHTML = EXPIRED; }
+        else connect();
+      });
+    </script>
+    <script>
+      // ===== The Modes view =====
+      // Edits go to `draft`, a copy of the saved config; "Save to the deck" sends it with PUT /config.
+
+      const DEF_COLOR = '#1e2230';
+      let tab = 'overview', draft = null, dirty = false, lastSig = '';
+      let msel = { mode: null, page: null, sel: null };
+      let feedSig = '', feedMap = {}, feedRows = [], clientRows = [], approvalRows = [], templateRows = [];
+      let obsScenes = [], obsInputs = [], obsNote = '';
+      const localImg = {}; // image name -> object URL, for what this tab uploaded
+      const clone = o => JSON.parse(JSON.stringify(o));
+      const hex = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : DEF_COLOR);
+      const pad = (a, n) => { while (a.length < n) a.push(null); return a; };
+
+      // ---- what each Action takes: [label, group, fields]; a field is [name, kind, hint, default]
+      // kinds: text, opt (text, left out when blank), int, optint, bool, optbool, color, page, mode, scene, input, client, json
+      const ACT = {
+        light_toggle: ['Toggle lights', 'Lights', [['id', 'opt', 'Light id (blank: every light)']]],
+        light_set: ['Set lights', 'Lights', [['id', 'opt', 'Light id (blank: every light)'], ['on', 'optbool'], ['brightness', 'optint', '3-100'], ['kelvin', 'optint', '2900-7000']]],
+        light_brightness_step: ['Light brightness step', 'Lights', [['id', 'opt', 'Light id (blank: every light)'], ['step', 'int', '', 2]]],
+        light_kelvin_step: ['Light warmth step', 'Lights', [['id', 'opt', 'Light id (blank: every light)'], ['step', 'int', 'Kelvin', 100]]],
+        prompter_play_pause: ['Prompter play / pause', 'Prompter', []],
+        prompter_speed_step: ['Prompter speed step', 'Prompter', [['step', 'int', '', 5]]],
+        prompter_restart: ['Prompter restart', 'Prompter', []],
+        mouse_dpi: ['Mouse DPI', 'Mouse', [['dpi', 'int', '', 1600]]],
+        mouse_dpi_step: ['Next DPI stage', 'Mouse', [['step', 'int', '', 1]]],
+        mouse_color: ['Mouse colour', 'Mouse', [['color', 'color']]],
+        deck_brightness_step: ['Deck brightness step', 'Deck and modes', [['step', 'int', '', 5]]],
+        page_go: ['Go to page', 'Deck and modes', [['page', 'page']]],
+        page_back: ['Back', 'Deck and modes', []],
+        mode_go: ['Go to mode', 'Deck and modes', [['mode', 'mode']]],
+        mode_next: ['Next mode', 'Deck and modes', []],
+        mode_picker: ['Mode picker', 'Deck and modes', []],
+        approval_step: ['Step through approvals', 'Deck and modes', [['step', 'int', '', 1]]],
+        sequence: ['Several actions in order', 'Deck and modes', 'steps'],
+        open_app: ['Open app', 'Computer', [['path', 'text', '/Applications/Notes.app']]],
+        open_url: ['Open website', 'Computer', [['url', 'text', 'https://…']]],
+        type_text: ['Type text', 'Computer', [['text', 'text', 'Text to type'], ['enter', 'bool', 'then Return']]],
+        hotkey: ['Press keys', 'Computer', [['keys', 'text', 'cmd+shift+4']]],
+        volume_step: ['Volume step', 'Computer', [['step', 'int', '', 3]]],
+        mic_volume_step: ['Mic volume step', 'Computer', [['step', 'int', '', 3]]],
+        mute_toggle: ['Mute', 'Computer', []],
+        mic_mute_toggle: ['Mute mic', 'Computer', []],
+        obs_scene: ['OBS scene', 'OBS', [['scene', 'scene']]],
+        obs_record_toggle: ['OBS record', 'OBS', []],
+        obs_stream_toggle: ['OBS stream', 'OBS', []],
+        obs_chapter_marker: ['OBS chapter marker', 'OBS', []],
+        obs_replay_save: ['OBS save replay', 'OBS', []],
+        obs_input_volume_step: ['OBS input volume step', 'OBS', [['input', 'input'], ['step', 'int', 'dB', 1]]],
+        obs_input_mute_toggle: ['OBS input mute', 'OBS', [['input', 'input']]],
+        client_event: ['Event for a client app', 'Clients', [['client', 'client'], ['name', 'text', 'event name'], ['value', 'json', 'JSON value (optional)']]],
+        placeholder: ['Not supported yet', 'Imported', [['note', 'text']]]
+      };
+      const hasStep = k => Array.isArray(ACT[k]?.[2]) && ACT[k][2].some(f => f[0] === 'step');
+      const PANEL_KINDS = ['value', 'gauge', 'bar', 'meter', 'choice', 'dots', 'sparkline', 'message'];
+
+      function describe(a) {
+        if (!a) return 'nothing';
+        const t = ACT[a.do]?.[0] || a.do;
+        if (a.do === 'sequence') return `${t} (${(a.steps || []).length})`;
+        const f = Array.isArray(ACT[a.do]?.[2]) ? ACT[a.do][2].find(f => ['page', 'mode', 'scene', 'input', 'client', 'path', 'url', 'keys'].includes(f[0]) || f[0] === 'name') : null;
+        return f && a[f[0]] ? `${t}: ${a[f[0]]}` : t;
+      }
+
+      // ---- small builders
+      const fld = (label, ...kids) => el('div', { className: 'row' }, el('label', { textContent: label }), ...kids);
+      const textIn = (v, ph, list) => { const i = el('input', { type: 'text', value: v ?? '', placeholder: ph || '' }); if (list) i.setAttribute('list', list); return i; };
+      const numIn = (v, ph, min, max) => el('input', { type: 'number', value: v ?? '', placeholder: ph || '', min: min ?? '', max: max ?? '' });
+      const selIn = (opts, cur) => el('select', {}, ...opts.map(([v, t]) => el('option', { value: v, textContent: t, selected: v === cur })));
+      const orNone = v => (v === '' || v == null ? undefined : v);
+
+      async function uploadImage(file) {
+        if (file.size > 20 * 1024 * 1024) throw new Error('That image is bigger than 20 MB.');
+        if (dead) throw new Error('This session has ended.');
+        const r = await fetch('/api/images', { method: 'PUT', headers: { Authorization: 'Bearer ' + token, 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+        if (r.status === 401) { sessionEnded(); throw new Error('This session has ended.'); }
+        const b = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(b.error || r.statusText);
+        if (localImg[b.name]) URL.revokeObjectURL(localImg[b.name]);
+        localImg[b.name] = URL.createObjectURL(file);
+        if (blobs.get(b.name)) URL.revokeObjectURL(blobs.get(b.name));
+        blobs.delete(b.name);
+        return b.name;
+      }
+      /// A "Choose image" button; `done(name)` gets the stored name.
+      function pickImage(done, label = 'Upload…') {
+        const f = el('input', { type: 'file', accept: 'image/*', hidden: true });
+        f.onchange = () => { const file = f.files[0]; if (file) uploadImage(file).then(done).catch(toast); f.value = ''; };
+        return el('label', { className: 'btn small' }, label, f);
+      }
+
+      // ---- text sources, rings, faces
+      function textSource(cur) {
+        const kind = cur == null ? 'none' : typeof cur === 'string' ? 'text' : 'feed';
+        const sel = selIn([['none', '—'], ['text', 'Text'], ['feed', 'Feed']], kind);
+        const inp = textIn(typeof cur === 'string' ? cur : cur?.feed, '', 'dlFeeds');
+        const sync = () => { inp.hidden = sel.value === 'none'; inp.placeholder = sel.value === 'feed' ? 'feed key, like approvals.pending' : 'text'; };
+        sel.onchange = sync; sync();
+        return { elem: el('span', { className: 'row', style: 'margin:0;flex:1' }, sel, inp), get() { return sel.value === 'none' || !inp.value ? undefined : sel.value === 'text' ? inp.value : { feed: inp.value }; } };
+      }
+      function ringEditor(cur) {
+        const kind = cur == null ? 'none' : typeof cur === 'string' ? 'always' : 'when';
+        const sel = selIn([['none', '—'], ['always', 'Always'], ['when', 'While a feed is on']], kind);
+        const col = el('input', { type: 'color', value: hex(typeof cur === 'string' ? cur : cur?.color || '#34d399') });
+        const feed = textIn(cur?.feed, 'feed key', 'dlFeeds');
+        const sync = () => { col.hidden = sel.value === 'none'; feed.hidden = sel.value !== 'when'; };
+        sel.onchange = sync; sync();
+        return { elem: el('span', { className: 'row', style: 'margin:0;flex:1' }, sel, col, feed), get() { return sel.value === 'none' ? undefined : sel.value === 'always' ? col.value : feed.value ? { color: col.value, feed: feed.value } : undefined; } };
+      }
+      function faceEditor(face = {}) {
+        const bg = textIn(face.background_image, 'image name');
+        const value = textSource(face.value), badge = textSource(face.badge), ring = ringEditor(face.ring);
+        const prog = textIn(face.progress, 'feed with 0-100', 'dlFeeds'), glow = textIn(face.glow, 'feed (glows while on)', 'dlFeeds');
+        return {
+          elem: el('div', { className: 'sub' },
+            fld('Background', bg, pickImage(n => { bg.value = n; })),
+            fld('Value', value.elem), fld('Badge', badge.elem), fld('Progress', prog), fld('Ring', ring.elem), fld('Glow', glow)),
+          get() { return JSON.parse(JSON.stringify({ background_image: orNone(bg.value), value: value.get(), badge: badge.get(), progress: orNone(prog.value), ring: ring.get(), glow: orNone(glow.value) })); }
+        };
+      }
+      /// Label, colour, icon and face: what a key (or one of its two states) looks like.
+      function lookEditor(o, withHold) {
+        const label = el('input', { type: 'text', value: o.label ?? '', maxLength: 24 });
+        const color = el('input', { type: 'color', value: hex(o.color) });
+        const icon = textIn(o.icon, 'icon name');
+        const face = faceEditor(o.face);
+        return {
+          elem: el('div', {}, fld('Label', label, color), fld('Icon', icon, pickImage(n => { icon.value = n; })), face.elem),
+          get() { const f = face.get(); return { label: label.value, color: color.value, icon: orNone(icon.value), face: Object.keys(f).length ? f : undefined }; }
+        };
+      }
+
+      // ---- the action picker
+      /// `opts.steps`: only actions that take a `step` (a dial's Turn). get() gives the Action or null.
+      function actionPicker(cur, opts = {}) {
+        const sel = el('select');
+        sel.append(el('option', { value: '', textContent: '— nothing —' }));
+        const groups = {};
+        for (const [k, [label, group]] of Object.entries(ACT)) {
+          // A stored turn that isn't a step action stays listed, so opening the editor can't change it.
+          if (opts.steps && !hasStep(k) && cur?.do !== k) continue;
+          if (k === 'placeholder' && cur?.do !== 'placeholder') continue;
+          (groups[group] ||= el('optgroup', { label: group })).append(el('option', { value: k, textContent: label, selected: cur?.do === k }));
+        }
+        sel.append(...Object.values(groups));
+        // An action this panel doesn't know (from a newer build) is kept exactly as stored.
+        if (cur && !ACT[cur.do]) sel.append(el('option', { value: '__keep', textContent: `(unsupported: ${cur.do})`, selected: true }));
+        const body = el('span', { className: 'row', style: 'margin:0;flex:1' });
+        const box = el('div', {}, el('div', { className: 'row', style: 'margin:0' }, sel, body));
+        let getters = {}, stepsEd = null;
+        const draw = () => {
+          body.replaceChildren(); getters = {}; stepsEd?.elem.remove(); stepsEd = null;
+          const spec = ACT[sel.value]; if (!spec) return;
+          const isCur = cur?.do === sel.value;
+          if (spec[2] === 'steps') { stepsEd = stepsEditor(isCur ? cur.steps : []); box.append(stepsEd.elem); return; }
+          for (const [name, kind, hint, def] of spec[2]) {
+            const v = isCur ? cur[name] : undefined;
+            let input, get;
+            if (kind === 'int' || kind === 'optint') { input = numIn(v ?? (kind === 'int' ? def : ''), hint); get = () => (input.value === '' ? (kind === 'int' ? def ?? 0 : undefined) : Math.trunc(+input.value)); }
+            else if (kind === 'bool') { input = el('input', { type: 'checkbox', checked: !!v, title: hint }); get = () => input.checked; body.append(input, el('span', { className: 'muted', textContent: hint || name })); getters[name] = get; continue; }
+            else if (kind === 'optbool') { input = selIn([['', 'on/off: leave'], ['true', 'turn on'], ['false', 'turn off']], v == null ? '' : String(v)); get = () => (input.value === '' ? undefined : input.value === 'true'); }
+            else if (kind === 'color') { input = el('input', { type: 'color', value: hex(v || '#00ff66') }); get = () => input.value; }
+            else if (kind === 'page') { const ps = (curMode()?.pages || []).map(p => p.name); input = el('select', {}, ...(v && !ps.includes(v) ? [el('option', { value: v, textContent: `(missing: ${v})`, selected: true })] : []), ...ps.map(n => el('option', { value: n, textContent: n, selected: n === v }))); get = () => input.value; }
+            else if (kind === 'mode') { input = el('select', {}, ...(v && !draft.modes.some(m => m.id === v) ? [el('option', { value: v, textContent: `(missing: ${v})`, selected: true })] : []), ...draft.modes.map(m => el('option', { value: m.id, textContent: m.name, selected: m.id === v }))); get = () => input.value; }
+            else if (kind === 'scene' || kind === 'input' || kind === 'client') { input = textIn(v, kind === 'scene' ? 'scene name' : kind === 'input' ? 'audio input name' : 'client name', kind === 'scene' ? 'dlScenes' : kind === 'input' ? 'dlInputs' : 'dlClients'); get = () => input.value; }
+            else if (kind === 'json') { input = textIn(v === undefined || v === null ? '' : JSON.stringify(v), hint); get = () => { if (!input.value.trim()) return undefined; try { return JSON.parse(input.value); } catch { throw new Error('The event value must be valid JSON, like 1, "text" or {"a":1}.'); } }; }
+            else { input = textIn(v, hint); get = () => (kind === 'opt' ? orNone(input.value) : input.value); }
+            getters[name] = get;
+            body.append(kind === 'int' || kind === 'optint' ? el('span', { className: 'row', style: 'margin:0' }, el('span', { className: 'muted', textContent: name }), input) : input);
+          }
+        };
+        sel.onchange = draw; draw();
+        return {
+          elem: box,
+          get() {
+            if (!sel.value) return null;
+            if (sel.value === '__keep') return JSON.parse(JSON.stringify(cur));
+            const a = { do: sel.value };
+            if (stepsEd) a.steps = stepsEd.get();
+            for (const [n, g] of Object.entries(getters)) { const v = g(); if (v !== undefined) a[n] = v; }
+            return a;
+          }
+        };
+      }
+      function stepsEditor(cur) {
+        const list = el('div'), rows = [];
+        const add = (step) => {
+          const delay = numIn(step?.delay_ms ?? 0, 'ms', 0, 60000), ap = actionPicker(step?.action);
+          const row = { delay, ap, node: null };
+          row.node = el('div', { className: 'sub' }, el('div', { className: 'row', style: 'margin:0' }, el('span', { className: 'muted', textContent: 'wait' }), delay, el('span', { className: 'muted', textContent: 'ms, then' }),
+            el('button', { className: 'small', textContent: '↑', title: 'Move up', onclick: () => { const i = rows.indexOf(row); if (i > 0) { rows.splice(i - 1, 0, rows.splice(i, 1)[0]); sync(); } } }),
+            el('button', { className: 'small', textContent: '↓', title: 'Move down', onclick: () => { const i = rows.indexOf(row); if (i < rows.length - 1) { rows.splice(i + 1, 0, rows.splice(i, 1)[0]); sync(); } } }),
+            el('button', { className: 'small danger', textContent: 'Remove step', onclick: () => { rows.splice(rows.indexOf(row), 1); sync(); } })), ap.elem);
+          rows.push(row);
+        };
+        const sync = () => list.replaceChildren(...rows.map(r => r.node));
+        (cur || []).forEach(add); if (!rows.length) add();
+        sync();
+        return {
+          elem: el('div', { className: 'sub' }, el('div', { className: 'muted', textContent: 'Steps run in order, each after its wait. A whole sequence may wait at most 60 s.' }), list, el('button', { className: 'small', textContent: 'Add a step', onclick: () => { add(); sync(); } })),
+          get() { return rows.map(r => ({ action: r.ap.get(), delay_ms: Math.max(0, Math.trunc(+r.delay.value || 0)) })).filter(s => s.action); }
+        };
+      }
+
+      // ---- dial binding (a knob, or the dial inside a strip panel)
+      function dialEditor(d) {
+        d = d || {};
+        const label = el('input', { type: 'text', value: d.label ?? '', maxLength: 12 });
+        const turn = actionPicker(d.turn, { steps: true }), left = actionPicker(d.turn_left), right = actionPicker(d.turn_right), press = actionPicker(d.press), alt = actionPicker(d.alt_turn, { steps: true });
+        return {
+          elem: el('div', {}, fld('Label', label), fld('Turn', turn.elem),
+            el('div', { className: 'muted', textContent: 'Or one action per click, such as hotkeys (used when Turn is nothing):' }),
+            fld('Left', left.elem), fld('Right', right.elem), fld('Press', press.elem), fld('Held turn', alt.elem)),
+          get() {
+            const o = { label: label.value, turn: turn.get(), turn_left: left.get() || undefined, turn_right: right.get() || undefined, press: press.get(), alt_turn: alt.get() || undefined };
+            return o.label || o.turn || o.turn_left || o.turn_right || o.press || o.alt_turn ? o : null;
+          }
+        };
+      }
+
+      // ---- the draft
+      const curMode = () => draft?.modes.find(m => m.id === msel.mode) ?? draft?.modes[0];
+      const curPage = () => { const m = curMode(); return m?.pages.find(p => p.name === msel.page) ?? m?.pages[0]; };
+      function edit(fn) { fn(); dirty = true; renderModes(); }
+      const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'mode';
+      const uniqueId = base => { let id = base, n = 2; while (draft.modes.some(m => m.id === id)) id = base + '-' + n++; return id; };
+      const uniqueName = (base, names) => { let nm = base, n = 2; while (names.includes(nm)) nm = base + ' ' + n++; return nm; };
+
+      // Four different keys the deck has (8 on a Plus, more if the home page has more); the
+      // agent drops anything else, so say it here instead.
+      function badSlots(cfg) {
+        for (const m of cfg.modes || []) {
+          const s = m.approval_slots; if (!s) continue;
+          const v = [s.approvals, s.details, s.approve, s.deny];
+          const n = Math.max(8, m.pages?.[0]?.keys?.length || 0);
+          if (new Set(v).size !== 4) return `"${m.name}": the four approval keys must be different keys.`;
+          if (v.some(i => !Number.isInteger(i) || i < 0 || i >= n)) return `"${m.name}": approval keys must be keys 1 to ${n}.`;
+        }
+        return null;
+      }
+
+      async function saveDraft() {
+        const bad = badSlots(draft);
+        if (bad) { toast(bad); return; }
+        try {
+          // Someone else (the Overview tab, the app) may have saved since this draft began.
+          const now = await api('/config');
+          if (JSON.stringify(now) !== lastSig) {
+            if (!confirm('The saved config changed somewhere else after you started editing.\n\nOK saves your edits over it. Cancel keeps editing.')) {
+              if (confirm('Reload the saved version instead? Your unsaved edits will be dropped.')) { dirty = false; msel.sel = null; await load(); }
+              return;
+            }
+          }
+          await api('/config', { method: 'PUT', body: JSON.stringify(draft) });
+          dirty = false; await load(); toast2('Saved to the deck.');
+        } catch (e) { toast(e); }
+      }
+      function toast2(m) { const t = $('toast'); t.style.background = 'var(--ok)'; t.style.color = '#0b0b0d'; toast(m); setTimeout(() => { t.style.background = ''; t.style.color = ''; }, 4100); }
+      $('saveBtn').onclick = saveDraft;
+      $('discardBtn').onclick = () => { draft = clone(config); dirty = false; msel.sel = null; renderModes(); };
+      window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+      // ---- live values for the drawing
+      // The deck's own rules (deck.rs): a stale or missing feed reads "—"; a list reads as its length;
+      // a badge shows only while its feed is truthy; truthy is a non-zero number, text other than
+      // "", "false" or "0", or a non-empty list.
+      const truthy = v => v === null || v === undefined ? false : typeof v === 'number' ? v !== 0 && !Number.isNaN(v) : typeof v === 'string' ? v !== '' && v !== 'false' && v !== '0' : Array.isArray(v) ? v.length > 0 : !!v;
+      const liveText = (src) => {
+        if (src == null) return null;
+        if (typeof src === 'string') return src;
+        const f = feedMap[src.feed];
+        if (!f || f.stale || f.value === null || f.value === undefined) return '—';
+        const v = typeof f.value === 'number' ? (Number.isInteger(f.value) ? String(f.value) : f.value.toFixed(1)) : Array.isArray(f.value) ? String(f.value.length) : String(f.value);
+        return v + (f.unit ? ' ' + f.unit : '');
+      };
+      /// A badge's text, or null when the deck would draw none (a feed that is zero, empty, off or stale).
+      const badgeText = src => {
+        if (src == null) return null;
+        if (typeof src === 'string') return src === '' ? null : cut3(src);
+        const f = feedMap[src.feed];
+        return f && !f.stale && truthy(f.value) ? cut3(liveText(src)) : null;
+      };
+      // Three characters at most, the third an ellipsis when it was cut.
+      const cut3 = t => (Array.from(t).length > 3 ? Array.from(t).slice(0, 2).join('') + '…' : t);
+      const feedOn = k => { const f = feedMap[k]; return !!f && !f.stale && truthy(f.value); };
+      const feedNum = k => { const v = feedMap[k]?.value; return typeof v === 'number' ? Math.max(0, Math.min(100, v)) : 0; };
+      const luma = c => { const n = parseInt(c.slice(1), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255); };
+      const DOT = { ok: '#34d399', warn: '#f59e0b', bad: '#ef4444' };
+      const PIC = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg>';
+
+      function keyCell(k, i, page) {
+        const look = k?.states ? { ...k, ...k.states[0], face: { ...k.face, ...k.states[0].face }, icon: k.states[0].icon ?? k.icon } : k;
+        const sel = msel.sel?.t === 'key' && msel.sel.i === i;
+        const c = el('button', { className: 'dk' + (k ? '' : ' empty') + (sel ? ' sel' : ''), id: 'dkey' + i, title: k ? describe(k.action) : 'Empty key: click to set it up, or drop an image on it', textContent: k ? '' : '+' });
+        c.onclick = () => { msel.sel = { t: 'key', i }; renderDevice(); renderEditor(); };
+        // Drop an image: it becomes the key's background (hold Option or Alt for the icon).
+        c.ondragover = e => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); c.classList.add('drop'); } };
+        c.ondragleave = () => c.classList.remove('drop');
+        c.ondrop = e => {
+          e.preventDefault(); c.classList.remove('drop');
+          const file = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith('image/'));
+          if (!file) return toast('Drop an image file.');
+          if (!k) return toast('Set what the key does first (click it), then drop the image.');
+          const asIcon = e.altKey;
+          uploadImage(file).then(name => edit(() => { const key = (curPage().keys[i] ||= k); if (asIcon) key.icon = name; else key.face = { ...key.face, background_image: name }; toast2(`${asIcon ? 'Icon' : 'Background'} set on key ${i + 1}. Save to put it on the deck.`); })).catch(toast);
+        };
+        if (!k) return c;
+        const f = look.face || {};
+        c.style.background = hex(look.color);
+        const ring = f.ring ? (typeof f.ring === 'string' ? f.ring : feedOn(f.ring.feed) ? f.ring.color : null) : null;
+        const glow = f.glow && feedOn(f.glow);
+        c.style.boxShadow = ['0 0 0 3px #0b0b0d', ring ? `inset 0 0 0 4px ${ring}` : '', glow ? `0 0 22px ${hex(look.color)}` : ''].filter(Boolean).join(',');
+        if (f.background_image) c.append(picture(f.background_image, { className: 'bg' }) || el('span', { className: 'bgph', title: f.background_image }));
+        else if (look.icon) {
+          // The deck draws the bundled line icons in the key's ink: dark on a light key, else white.
+          const dark = luma(hex(look.color)) > 170;
+          const im = picture(look.icon, { className: 'ico pic', title: look.icon, style: look.icon.startsWith('lucide/') ? 'filter:brightness(0)' + (dark ? '' : ' invert(1)') : '' });
+          c.append(im || el('span', { className: 'ico', title: look.icon, innerHTML: PIC }));
+        }
+        const v = liveText(f.value);
+        if (v !== null) c.append(el('span', { className: 'val' + (v === '—' ? ' dim' : ''), textContent: v }));
+        c.append(el('span', { className: 'lab', textContent: look.label || '' }));
+        const b = badgeText(f.badge); if (b !== null) c.append(el('span', { className: 'bdg', textContent: b }));
+        if (f.progress) c.append(el('span', { className: 'prog' }, el('b', { style: `width:${feedNum(f.progress)}%` })));
+        if (k.states) c.append(el('span', { className: 'two', textContent: feedOn(k.follow) ? '2/2' : '1/2' }));
+        return c;
+      }
+      function segCell(p, i) {
+        const sel = msel.sel?.t === 'strip' && msel.sel.i === i;
+        const c = el('button', { className: 'seg' + (p ? '' : ' none') + (sel ? ' sel' : ''), id: 'dseg' + i, title: p ? p.kind : 'No panel: click to add one', textContent: p ? '' : '+' });
+        c.onclick = () => { msel.sel = { t: 'strip', i }; renderDevice(); renderEditor(); };
+        if (!p) return c;
+        c.append(el('span', { className: 'k', textContent: p.kind }), el('span', { className: 'l', textContent: p.label || '' }));
+        if (p.kind === 'dots') {
+          // The deck draws a square per list item, coloured by its state, up to 24.
+          const f = p.feed ? feedMap[p.feed] : null;
+          const items = f && !f.stale && Array.isArray(f.value) ? f.value : [];
+          c.append(el('span', { className: 'dots' }, ...(items.length ? items.slice(0, 24).map(it => el('i', { style: 'background:' + (DOT[it?.state] || '#52525b') })) : [el('span', { className: 'muted', textContent: '—' })])));
+          const m = liveText(p.value);
+          if (m !== null) c.append(el('span', { className: 'v', textContent: m }));
+          else if (items.length > 24) c.append(el('span', { className: 'v', textContent: '+' + (items.length - 24) }));
+          return c;
+        }
+        const v = liveText(p.value) ?? (p.feed ? liveText({ feed: p.feed }) : p.kind === 'choice' ? (p.options[0]?.label ?? '—') : '');
+        if (v) c.append(el('span', { className: 'v', textContent: v }));
+        if (p.feed && ['gauge', 'bar', 'meter'].includes(p.kind)) c.append(el('span', { className: 'bar' }, el('b', { style: `width:${feedNum(p.feed)}%` })));
+        return c;
+      }
+
+      function renderModeBar() {
+        const bar = $('modeBar'); if (!draft) return;
+        const cur = curMode(), onDeck = status.mode?.id;
+        const chips = el('div', { className: 'chips' });
+        for (const m of draft.modes) {
+          const sel = m.id === cur.id;
+          const chip = el('button', { className: 'chip' + (sel ? ' sel' : ''), style: sel ? `background:${hex(m.accent)}` : '', onclick: () => { msel = { mode: m.id, page: null, sel: null }; renderModes(); } },
+            el('i', { style: `background:${hex(m.accent)}` }), m.name || m.id, m.id === onDeck ? el('em', { textContent: 'on deck' }) : '');
+          chips.append(chip);
+        }
+        chips.append(el('button', { className: 'chip', textContent: '+ New mode', onclick: () => edit(() => {
+          const name = uniqueName('New mode', draft.modes.map(m => m.name)); const id = uniqueId(slug(name));
+          draft.modes.push({ id, name, accent: '#2563eb', pages: [{ name: 'Home', keys: pad([], 8), dials: pad([], 4) }], strip: [], popups: false });
+          msel = { mode: id, page: null, sel: null };
+        }) }));
+        const idx = draft.modes.indexOf(cur);
+        const name = el('input', { type: 'text', value: cur.name, maxLength: 32, title: 'Name', onchange: () => { if (name.value.trim()) edit(() => { cur.name = name.value.trim(); }); } });
+        const accent = el('input', { type: 'color', value: hex(cur.accent), title: 'Accent', onchange: () => edit(() => { cur.accent = accent.value; }) });
+        const icon = el('input', { type: 'text', value: cur.icon || '', placeholder: 'icon name', title: 'Icon', onchange: () => edit(() => { cur.icon = orNone(icon.value.trim()); }) });
+        const pops = el('input', { type: 'checkbox', checked: cur.popups, id: 'mPopups', onchange: () => edit(() => { cur.popups = pops.checked; }) });
+        const move = d => edit(() => { const j = idx + d; if (j >= 0 && j < draft.modes.length) draft.modes.splice(j, 0, draft.modes.splice(idx, 1)[0]); });
+        const tools = el('div', { className: 'tools' }, name, accent, icon, pickImage(n => edit(() => { cur.icon = n; }), 'Icon image…'),
+          el('button', { textContent: '← Earlier', disabled: idx === 0, onclick: () => move(-1) }),
+          el('button', { textContent: 'Later →', disabled: idx === draft.modes.length - 1, onclick: () => move(1) }),
+          pops, el('label', { htmlFor: 'mPopups', className: 'muted', textContent: 'Approval pop-ups' }),
+          el('button', { className: 'danger', textContent: 'Delete mode', disabled: draft.modes.length < 2, onclick: () => {
+            let refs = 0;
+            const count = o => { if (Array.isArray(o)) o.forEach(count); else if (o && typeof o === 'object') { if (o.do === 'mode_go' && o.mode === cur.id) refs++; Object.values(o).forEach(count); } };
+            count(draft.modes.filter(m => m !== cur));
+            const warn = refs ? `\n\n${refs} key${refs === 1 ? '' : 's'} elsewhere still go to this mode and will point at nothing.` : '';
+            if (!confirm(`Delete the mode "${cur.name}" and its pages?${warn}`)) return;
+            edit(() => {
+              draft.modes.splice(idx, 1); draft.mode_rules = (draft.mode_rules || []).filter(r => r.mode !== cur.id);
+              if (draft.start_mode === cur.id) draft.start_mode = draft.modes[0].id;
+              msel = { mode: draft.modes[0].id, page: null, sel: null };
+            });
+          } }));
+        // Pages of this mode.
+        const page = curPage();
+        const pick = el('select', { onchange: () => { msel.page = pick.value; msel.sel = null; renderModes(); } }, ...cur.pages.map(p => el('option', { value: p.name, textContent: p.name + (p.name === deckPage ? '  (on deck)' : ''), selected: p === page })));
+        const pages = el('div', { className: 'tools' }, el('span', { className: 'muted', textContent: 'Page' }), pick,
+          el('button', { textContent: 'New page', onclick: () => { const nm = prompt('Name for the new page'); if (!nm || cur.pages.some(p => p.name === nm)) return; edit(() => { cur.pages.push({ name: nm, keys: pad([], 8), dials: pad([], 4) }); msel.page = nm; msel.sel = null; }); } }),
+          el('button', { textContent: 'Rename', disabled: !page, onclick: () => {
+            const nm = prompt('New name', page.name); if (!nm || nm === page.name || cur.pages.some(p => p.name === nm)) return;
+            edit(() => {
+              // Keys in this mode that go to the page follow the rename.
+              const fix = a => { if (a?.do === 'page_go' && a.page === page.name) a.page = nm; if (a?.steps) a.steps.forEach(s => fix(s.action)); };
+              const fixKey = k => { fix(k?.action); k?.states?.forEach(s => fix(s.action)); fix(k?.press); fix(k?.turn); fix(k?.turn_left); fix(k?.turn_right); fix(k?.alt_turn); k?.options?.forEach(o => fix(o.action)); };
+              for (const p of cur.pages) { p.keys.forEach(fixKey); p.dials.forEach(fixKey); }
+              (cur.strip || []).forEach(sp => { fixKey(sp); fixKey(sp?.dial); });
+              if (draft.start_mode === cur.id && draft.start_page === page.name) draft.start_page = nm;
+              page.name = nm; msel.page = nm;
+            });
+          } }),
+          el('button', { className: 'danger', textContent: 'Remove page', disabled: cur.pages.length < 2 || !page, onclick: () => { if (confirm(`Remove the page "${page.name}"?`)) edit(() => { cur.pages = cur.pages.filter(p => p !== page); msel.page = null; msel.sel = null; }); } }),
+          el('button', { textContent: 'Show on deck', disabled: dirty || cur.id !== onDeck || !page, title: cur.id !== onDeck ? 'Switch the deck to this mode first' : 'Save first so the deck has these pages', onclick: () => act({ do: 'page_go', page: page.name }) }),
+          el('button', { textContent: 'Show mode on deck', disabled: dirty || cur.id === onDeck, title: dirty ? 'Save first' : '', onclick: () => act({ do: 'mode_go', mode: cur.id }) }));
+        bar.replaceChildren(chips, tools, pages);
+      }
+
+      function renderDevice() {
+        const w = $('deckWrap'); if (!draft) return;
+        const m = curMode(), page = curPage();
+        if (!page) { w.replaceChildren(el('div', { className: 'dev' }, el('div', { className: 'muted', textContent: 'This mode has no pages yet.' }), el('button', { textContent: 'Add a page', onclick: () => edit(() => { m.pages.push({ name: 'Home', keys: pad([], 8), dials: pad([], 4) }); }) }))); return; }
+        pad(page.keys, 8); pad(page.dials, 4);
+        const keys = el('div', { className: 'dkeys' }, ...[...Array(8).keys()].map(i => keyCell(page.keys[i], i, page)));
+        const strip = el('div', { className: 'strip' }, ...[...Array(4).keys()].map(i => segCell(m.strip?.[i], i)));
+        const knobs = el('div', { className: 'knobs' }, ...[...Array(4).keys()].map(i => {
+          const sel = msel.sel?.t === 'knob' && msel.sel.i === i;
+          const lab = page.dials[i]?.label || m.strip?.[i]?.dial?.label || 'Knob ' + (i + 1);
+          const b = el('button', { className: 'knobw' + (sel ? ' sel' : ''), id: 'dknob' + i, title: 'Knob ' + (i + 1) + ' on this page' }, el('div', { className: 'knob' }), el('span', { textContent: lab }));
+          b.onclick = () => { msel.sel = { t: 'knob', i }; renderDevice(); renderEditor(); };
+          return b;
+        }));
+        w.replaceChildren(el('div', { className: 'dev' }, keys, strip, knobs), el('div', { className: 'muted', style: 'margin-top:10px', textContent: 'Click a key, strip panel or knob to edit it. Drop an image on a key for its background (hold Option or Alt for the icon).' }));
+      }
+
+      function renderEditor() {
+        const box = $('mEditor'); box.replaceChildren(); if (!draft) return;
+        const s = msel.sel, m = curMode(), page = curPage();
+        if (!s || !page) { box.append(el('div', { className: 'ed muted', textContent: 'Pick a key, a strip panel or a knob to edit it.' })); return; }
+        const apply = fn => { try { fn(); } catch (e) { return toast(e); } edit(() => {}); toast2('Applied. Save to put it on the deck.'); };
+        if (s.t === 'key') {
+          const cur = page.keys[s.i];
+          const look = lookEditor(cur || { color: DEF_COLOR });
+          const action = actionPicker(cur?.action);
+          const hold = numIn(cur?.hold_ms || '', '0', 0, 5000);
+          const two = el('input', { type: 'checkbox', checked: !!cur?.states });
+          const follow = textIn(cur?.follow, 'feed key: while on, state 2 shows', 'dlFeeds');
+          const stBox = el('div', { className: 'sub' });
+          let sts = null;
+          const drawStates = () => {
+            stBox.replaceChildren(); sts = null; follow.hidden = !two.checked; if (!two.checked) return;
+            const base = look.get();
+            const init = cur?.states || [0, 1].map(() => ({ label: base.label, color: base.color, action: action.get() || { do: 'mode_picker' } }));
+            sts = init.map((st, n) => ({ look: lookEditor(st), action: actionPicker(st.action) }));
+            sts.forEach((x, n) => stBox.append(el('div', { className: 'title', textContent: `State ${n + 1}${n ? ' (while the feed is on)' : ''}` }), x.look.elem, fld('Press', x.action.elem)));
+          };
+          two.onchange = drawStates; drawStates();
+          box.append(el('div', { className: 'ed' },
+            el('div', { className: 'title', textContent: `${m.name} · ${page.name} · key ${s.i + 1}` }),
+            look.elem, fld('Press', action.elem), fld('Hold', hold, el('span', { className: 'muted', textContent: 'ms before it runs (0: on press)' })),
+            el('div', { className: 'row' }, two, el('label', { textContent: 'Two states', style: 'min-width:0' }), follow), stBox,
+            el('div', { className: 'acts' },
+              el('button', { className: 'primary', textContent: 'Apply', onclick: () => apply(() => {
+                const a = action.get(); if (!a) throw new Error('Pick what the key does.');
+                const l = look.get();
+                const key = { ...l, action: a };
+                if (+hold.value > 0) key.hold_ms = Math.trunc(+hold.value);
+                if (two.checked) { key.states = sts.map(x => { const sl = x.look.get(); const act = x.action.get(); if (!act) throw new Error('Each state needs an action.'); return { ...sl, action: act }; }); if (follow.value) key.follow = follow.value; }
+                page.keys[s.i] = JSON.parse(JSON.stringify(key));
+              }) }),
+              el('button', { textContent: 'Try the action', onclick: () => { try { const a = action.get(); if (a) act(a); } catch (e) { toast(e); } } }),
+              el('button', { className: 'danger', textContent: 'Clear key', disabled: !cur, onclick: () => edit(() => { page.keys[s.i] = null; msel.sel = null; }) }))));
+        } else if (s.t === 'knob') {
+          const dial = dialEditor(page.dials[s.i]);
+          box.append(el('div', { className: 'ed' }, el('div', { className: 'title', textContent: `${m.name} · ${page.name} · knob ${s.i + 1}` }), dial.elem,
+            el('div', { className: 'acts' }, el('button', { className: 'primary', textContent: 'Apply', onclick: () => apply(() => { page.dials[s.i] = dial.get(); }) }),
+              el('button', { className: 'danger', textContent: 'Clear knob', onclick: () => edit(() => { page.dials[s.i] = null; msel.sel = null; }) }))));
+        } else {
+          pad(m.strip ||= [], 4);
+          const p = m.strip[s.i] || { kind: 'value', label: '', options: [], commit: 'turn' };
+          const kind = selIn(PANEL_KINDS.map(k => [k, k]), p.kind);
+          const label = el('input', { type: 'text', value: p.label ?? '', maxLength: 24 });
+          const value = textSource(p.value), sub = textSource(p.sub), feed = textIn(p.feed, 'feed key', 'dlFeeds');
+          const commit = selIn([['turn', 'as the knob turns'], ['press', 'when the knob is pressed']], p.commit || 'turn');
+          const opts = [], optList = el('div');
+          const addOpt = o => { const ol = el('input', { type: 'text', value: o?.label ?? '', placeholder: 'option label' }), oa = actionPicker(o?.action); const r = { ol, oa, node: null }; r.node = el('div', { className: 'sub' }, el('div', { className: 'row', style: 'margin:0' }, ol, el('button', { className: 'small danger', textContent: 'Remove', onclick: () => { opts.splice(opts.indexOf(r), 1); optList.replaceChildren(...opts.map(x => x.node)); } })), oa.elem); opts.push(r); };
+          (p.options || []).forEach(addOpt); optList.replaceChildren(...opts.map(x => x.node));
+          const optBox = el('div', {}, el('div', { className: 'muted', textContent: 'Options the knob chooses between:' }), optList, el('button', { className: 'small', textContent: 'Add an option', onclick: () => { addOpt(); optList.replaceChildren(...opts.map(x => x.node)); } }), fld('Commit', commit));
+          const dial = dialEditor(p.dial), press = actionPicker(p.press);
+          const syncKind = () => { optBox.hidden = kind.value !== 'choice'; feedRow.hidden = kind.value === 'choice' || kind.value === 'message'; };
+          const feedRow = fld('Feed', feed);
+          kind.onchange = syncKind; syncKind();
+          box.append(el('div', { className: 'ed' }, el('div', { className: 'title', textContent: `${m.name} · strip panel ${s.i + 1}` }),
+            fld('Kind', kind), fld('Label', label), fld('Value', value.elem), fld('Sub line', sub.elem), feedRow, optBox,
+            el('div', { className: 'title', style: 'margin-top:12px', textContent: 'Knob under this panel' }), dial.elem, fld('Press', press.elem),
+            el('div', { className: 'acts' }, el('button', { className: 'primary', textContent: 'Apply', onclick: () => apply(() => {
+              const o = { kind: kind.value, label: label.value, value: value.get(), sub: sub.get(), feed: orNone(feed.value), commit: commit.value, dial: dial.get() || undefined, press: press.get() || undefined };
+              o.options = kind.value === 'choice' ? opts.map(x => ({ label: x.ol.value, action: x.oa.get() })).filter(x => x.action) : [];
+              if (kind.value === 'choice' && !o.options.length) throw new Error('A choice panel needs at least one option with an action.');
+              m.strip[s.i] = JSON.parse(JSON.stringify(o));
+              while (m.strip.length && !m.strip[m.strip.length - 1]) m.strip.pop();
+            }) }), el('button', { className: 'danger', textContent: 'Remove panel', disabled: !m.strip[s.i], onclick: () => edit(() => { m.strip[s.i] = null; while (m.strip.length && !m.strip[m.strip.length - 1]) m.strip.pop(); msel.sel = null; }) }))));
+        }
+      }
+
+      // ---- deck settings and rules
+      function renderSettings() {
+        const box = $('settingsBox'); if (!draft) return;
+        const start = selIn(draft.modes.map(m => [m.id, m.name]), draft.start_mode); start.onchange = () => edit(() => { draft.start_mode = start.value; });
+        const key = selIn([['picker', 'opens the mode picker'], ['cycle', 'goes to the next mode']], draft.mode_key || 'picker'); key.onchange = () => edit(() => { draft.mode_key = key.value; });
+        const sleep = numIn(draft.deck_sleep_min ?? 0, 'min', 0, 1440); sleep.onchange = () => edit(() => { draft.deck_sleep_min = Math.max(0, Math.trunc(+sleep.value || 0)); });
+        const simg = textIn(draft.deck_sleep_image, 'image name'); simg.onchange = () => edit(() => { draft.deck_sleep_image = orNone(simg.value.trim()) ?? null; });
+        const m = curMode();
+        const slotNames = ['approvals', 'details', 'approve', 'deny'];
+        const slots = m.approval_slots;
+        const slotOn = el('input', { type: 'checkbox', checked: !!slots, id: 'slotOn', onchange: () => edit(() => { m.approval_slots = slotOn.checked ? { approvals: 0, details: 1, approve: 2, deny: 3 } : undefined; }) });
+        const slotRow = el('div', { className: 'row' }, slotOn, el('label', { htmlFor: 'slotOn', textContent: `Approval keys on "${m.name}" home page`, style: 'min-width:0' }));
+        if (slots) for (const n of slotNames) { const i = numIn(slots[n] + 1, '', 1, 8); i.onchange = () => edit(() => { slots[n] = Math.max(0, Math.min(7, Math.trunc(+i.value || 1) - 1)); }); slotRow.append(el('span', { className: 'muted', textContent: n }), i); }
+        // Rules: the first rule that holds picks the mode.
+        const rules = (draft.mode_rules ||= []);
+        const ruleRows = rules.map((r, i) => {
+          const when = selIn([['obs_recording', 'OBS is recording'], ['obs_streaming', 'OBS is streaming'], ['app_frontmost', 'This app is in front']], r.when.on);
+          const app = textIn(r.when.bundle_id, 'bundle id, like com.apple.Terminal'); app.hidden = r.when.on !== 'app_frontmost';
+          const mode = selIn(draft.modes.map(x => [x.id, x.name]), r.mode);
+          when.onchange = () => edit(() => { r.when = when.value === 'app_frontmost' ? { on: when.value, bundle_id: app.value } : { on: when.value }; });
+          app.onchange = () => edit(() => { r.when.bundle_id = app.value.trim(); });
+          mode.onchange = () => edit(() => { r.mode = mode.value; });
+          return el('div', { className: 'row' }, el('span', { className: 'muted', textContent: 'When' }), when, app, el('span', { className: 'muted', textContent: 'switch to' }), mode,
+            el('button', { className: 'small', textContent: '↑', disabled: i === 0, onclick: () => edit(() => { rules.splice(i - 1, 0, rules.splice(i, 1)[0]); }) }),
+            el('button', { className: 'small', textContent: '↓', disabled: i === rules.length - 1, onclick: () => edit(() => { rules.splice(i + 1, 0, rules.splice(i, 1)[0]); }) }),
+            el('button', { className: 'small danger', textContent: 'Remove', onclick: () => edit(() => { rules.splice(i, 1); }) }));
+        });
+        box.replaceChildren(
+          fld('Start mode', start), fld('Mode key', key), fld('Deck sleeps', sleep, el('span', { className: 'muted', textContent: 'minutes of no use (0: never)' })),
+          fld('Sleep image', simg, pickImage(n => edit(() => { draft.deck_sleep_image = n; }))), slotRow,
+          el('h3', { textContent: 'Automatic mode rules' }),
+          ...(ruleRows.length ? ruleRows : [el('div', { className: 'muted', textContent: 'No rules. The deck stays in the mode you pick.' })]),
+          el('button', { textContent: 'Add a rule', onclick: () => edit(() => { rules.push({ when: { on: 'obs_recording' }, mode: draft.modes[0].id }); }) }));
+      }
+
+      // ---- approvals (deny only), feeds, clients, templates
+      async function loadApprovals() {
+        if (tab !== 'modes') return;
+        try { approvalRows = await api('/approvals'); renderApprovals(); } catch (e) { /* the next event retries */ }
+      }
+      function renderApprovals() {
+        const box = $('apvList'); $('apvNote').textContent = approvalRows.length ? approvalRows.length + ' waiting' : '';
+        if (!approvalRows.length) { box.className = 'muted'; box.textContent = 'Nothing is waiting.'; return; }
+        box.className = '';
+        box.replaceChildren(...approvalRows.map(a => el('div', { className: 'apv' + (a.id === focusApproval ? ' focus' : ''), id: 'apv-' + a.id },
+          el('div', { className: 'row', style: 'margin:0' }, el('span', { className: 't', textContent: a.title }), el('span', { className: 'pill risk-' + a.risk, textContent: a.risk }),
+            el('span', { className: 'muted', textContent: (a.source || a.client || '') + ' · waiting ' + a.age_s + ' s · expires in ' + Math.round(a.expires_in_s / 60) + ' min' })),
+          ...(a.lines || []).map(l => el('div', { className: 'ln', textContent: l })),
+          el('div', { className: 'row' },
+            ...(a.details_url && /^https:\/\//i.test(a.details_url) ? [el('a', { href: a.details_url, target: '_blank', rel: 'noopener noreferrer', textContent: 'Details' })] : []),
+            el('button', { className: 'danger', textContent: 'Deny', onclick: () => api('/approvals/' + encodeURIComponent(a.id) + '/deny', { method: 'POST' }).then(loadApprovals).catch(e => { toast(e); loadApprovals(); }) })))));
+      }
+      function focusApprovalCard() {
+        if (!focusApproval) return;
+        const card = $('apv-' + focusApproval);
+        if (card) card.scrollIntoView({ block: 'center' });
+        else toast('That request is no longer waiting.');
+        focusApproval = '';
+      }
+      async function loadFeeds() {
+        if (tab !== 'modes') return;
+        try {
+          feedRows = await api('/feeds'); feedMap = Object.fromEntries(feedRows.map(f => [f.key, f]));
+          renderFeeds();
+          // The drawing only changes when a value does (ages tick every time).
+          const sig = JSON.stringify(feedRows.map(f => [f.key, f.value, f.unit, f.state]));
+          if (sig !== feedSig) { feedSig = sig; $('dlFeeds').replaceChildren(...feedRows.map(f => el('option', { value: f.key }))); renderDevice(); }
+        } catch (e) { if (dead) return; throw e; /* the poll backs off; the tab opening it ignores this */ }
+      }
+      function renderFeeds() {
+        const box = $('feedList'); $('feedNote').textContent = feedRows.length + ' feeds';
+        if (!feedRows.length) { box.className = 'muted'; box.textContent = 'No feeds yet. Programs push them with a client token; NovaGear adds obs.*, system.* and approvals.pending.'; return; }
+        box.className = '';
+        box.replaceChildren(el('table', {}, ...feedRows.map(f => el('tr', {}, el('td', { className: 'mono', textContent: f.key }), el('td', { className: 'mono', textContent: f.value === null ? '—' : String(f.value) + (f.unit ? ' ' + f.unit : '') }),
+          el('td', {}, f.state ? el('span', { className: 'pill', textContent: f.state }) : ''), el('td', { className: 'muted', textContent: (f.stale ? 'stale · ' : '') + f.age_s + ' s ago' })))));
+      }
+      async function loadClients() {
+        try { clientRows = await api('/clients'); $('dlClients').replaceChildren(...clientRows.map(c => el('option', { value: c.name }))); renderClients(); } catch (e) { toast(e); }
+      }
+      function renderClients() {
+        $('clientList').replaceChildren(...(clientRows.length ? clientRows.map(c => el('div', { className: 'row' }, el('span', { className: 'name', textContent: c.name }),
+          el('span', { className: 'muted', textContent: 'added ' + new Date(c.created * 1000).toLocaleDateString() }),
+          el('button', { className: 'small danger', textContent: 'Remove', onclick: () => { if (confirm(`Remove the client "${c.name}"? Its token stops working.`)) api('/clients/' + encodeURIComponent(c.name), { method: 'DELETE' }).then(loadClients).catch(toast); } }))) : [el('div', { className: 'muted', textContent: 'No clients yet.' })]));
+      }
+      $('clientAdd').onclick = async () => {
+        const name = $('clientName').value.trim(); if (!name) return;
+        try {
+          const r = await api('/clients', { method: 'POST', body: JSON.stringify({ name }) });
+          $('clientName').value = '';
+          const code = el('code', { textContent: r.token });
+          $('tokenBox').replaceChildren(el('div', { className: 'tokenbox' }, el('strong', { textContent: `Token for ${r.name}. This is the only time it is shown.` }), code,
+            el('div', { className: 'row' }, el('button', { textContent: 'Copy', onclick: () => copyText(r.token, 'Token copied.') }), el('button', { textContent: 'I have saved it', onclick: () => $('tokenBox').replaceChildren() }))));
+          loadClients();
+        } catch (e) { toast(e); }
+      };
+
+      async function loadTemplates() {
+        try { templateRows = await api('/templates'); renderTemplates(); } catch (e) { toast(e); }
+      }
+      function renderTemplates() {
+        const box = $('tplList');
+        box.className = ''; box.replaceChildren(...templateRows.map(t => {
+          const rep = el('input', { type: 'checkbox', id: 'rep-' + t.slug });
+          return el('div', { className: 'apv' }, el('div', { className: 't', textContent: t.name }), el('div', { className: 'ln', textContent: t.description }),
+            el('div', { className: 'ln', textContent: 'Adds the modes: ' + t.modes.join(', ') + (t.needs.length ? ` · ${t.needs.length} scenes or inputs to pick` : '') }),
+            el('div', { className: 'row' }, rep, el('label', { htmlFor: 'rep-' + t.slug, style: 'min-width:0', textContent: 'Also replace my automatic mode rules with the template\'s' }),
+              el('button', { className: 'primary', textContent: 'Apply', disabled: dirty, title: dirty ? 'Save or discard your changes first' : '', onclick: () => applyTemplate(t, rep.checked) })));
+        }));
+      }
+      async function applyTemplate(t, replaceRules) {
+        try {
+          const report = await api(`/templates/${encodeURIComponent(t.slug)}/apply?replace_rules=${replaceRules}`, { method: 'POST' });
+          await load();
+          loadObs(); showApplied(t, report);
+        } catch (e) { toast(e); }
+      }
+      /// What the template changed, and a picker for each `<pick:…>` it left: scenes and inputs from OBS.
+      function showApplied(t, report) {
+        const dlg = $('tplDlg');
+        const found = [];
+        // Each blank is remembered by its path inside its mode, so it can be filled in a fresh copy of the config.
+        const walk = (o, where, mid, path) => {
+          if (!o || typeof o !== 'object') return;
+          const here = typeof o.label === 'string' && o.label ? where.split(' · ')[0] + ' · ' + o.label : where;
+          for (const [k, v] of Object.entries(o)) {
+            if (typeof v === 'string' && /<pick:[a-z_]+>/.test(v)) found.push({ mid, path: [...path, k], kind: v.match(/<pick:([a-z_]+)>/)[1], where: here + (o.do && ACT[o.do] ? ' · ' + ACT[o.do][0] : '') });
+            else walk(v, here, mid, [...path, k]);
+          }
+        };
+        for (const id of report.added) { const m = config.modes.find(x => x.id === id); if (m) walk(m, m.name, id, []); }
+        const rows = found.map(f => ({ f, input: textIn('', f.kind === 'scene' ? 'OBS scene' : 'OBS audio input', f.kind === 'scene' ? 'dlScenes' : 'dlInputs') }));
+        dlg.replaceChildren(
+          el('h3', { textContent: `${t.name} added`, style: 'margin-top:0' }),
+          el('div', { textContent: 'Modes added: ' + (report.added.join(', ') || 'none') }),
+          ...(report.renamed.length ? [el('div', { className: 'muted', textContent: 'Renamed because the name was taken: ' + report.renamed.map(([a, b]) => `${a} → ${b}`).join(', ') })] : []),
+          el('div', { className: 'muted', textContent: report.rules_replaced ? 'Your automatic mode rules were replaced.' : 'Your automatic mode rules were left alone.' }),
+          ...(rows.length ? [el('h3', { textContent: 'Pick from OBS' }), el('div', { className: 'muted', id: 'obsNote', textContent: obsNote }),
+            ...rows.map(r => el('div', { className: 'row' }, el('label', { textContent: r.f.where, style: 'min-width:180px' }), r.input)),
+            ...(report.needs.length ? [el('details', {}, el('summary', { className: 'muted', textContent: 'What needs a pick' }), ...report.needs.map(n => el('div', { className: 'muted', textContent: n })))] : [])] : []),
+          el('div', { className: 'acts', style: 'display:flex;gap:8px;margin-top:14px;justify-content:flex-end' },
+            el('button', { textContent: rows.length ? 'Pick later' : 'Close', onclick: () => dlg.close() }),
+            ...(rows.length ? [el('button', { className: 'primary', textContent: 'Save my picks', onclick: async () => {
+              const cfg = clone(config);
+              let n = 0;
+              for (const r of rows) {
+                const pick = r.input.value.trim(); if (!pick) continue;
+                let o = cfg.modes.find(x => x.id === r.f.mid);
+                for (const k of r.f.path.slice(0, -1)) o = o?.[k];
+                const last = r.f.path[r.f.path.length - 1];
+                if (o && typeof o[last] === 'string' && /<pick:[a-z_]+>/.test(o[last])) { o[last] = o[last].replace(/<pick:[a-z_]+>/, pick); n++; }
+              }
+              if (!n) { dlg.close(); return; }
+              try { await api('/config', { method: 'PUT', body: JSON.stringify(cfg) }); dlg.close(); await load(); toast2(`${n} pick${n === 1 ? '' : 's'} saved.`); } catch (e) { toast(e); }
+            } })] : [])));
+        dlg.showModal();
+      }
+
+      async function loadObs() {
+        const [s, i] = await Promise.allSettled([api('/obs/scenes'), api('/obs/inputs')]);
+        obsScenes = s.status === 'fulfilled' ? s.value : []; obsInputs = i.status === 'fulfilled' ? i.value : [];
+        obsNote = s.status === 'rejected' ? "OBS isn't reachable, so type the names. (" + (s.reason.message || 'no answer') + ')' : '';
+        $('dlScenes').replaceChildren(...obsScenes.map(v => el('option', { value: v })));
+        $('dlInputs').replaceChildren(...obsInputs.map(v => el('option', { value: v })));
+        if ($('obsNote')) $('obsNote').textContent = obsNote;
+      }
+
+      // ---- tabs and loading
+      function renderModes() { if (!draft) return; $('saveBar').hidden = !dirty; renderModeBar(); renderDevice(); renderEditor(); renderSettings(); renderTemplates(); }
+      /// Called after every `load()`: take in a changed saved config, unless there are unsaved edits.
+      function modesLoaded() {
+        const n = status.approvals?.pending || 0;
+        $('tabApprovals').hidden = !n; $('tabApprovals').textContent = n;
+        const sig = JSON.stringify(config);
+        if (!dirty && sig !== lastSig) { draft = clone(config); lastSig = sig; if (msel.mode && !draft.modes.some(m => m.id === msel.mode)) msel = { mode: null, page: null, sel: null }; if (tab === 'modes') renderModes(); }
+        else if (tab === 'modes') { renderModeBar(); renderDevice(); }
+        if (tab === 'modes') loadApprovals();
+      }
+      async function setTab(t) {
+        if (dead) return;
+        tab = t;
+        $('overview').hidden = t !== 'overview'; $('modesView').hidden = t !== 'modes';
+        $('tabOverview').className = t === 'overview' ? 'on' : ''; $('tabModes').className = t === 'modes' ? 'on' : '';
+        document.body.classList.toggle('modes', t === 'modes');
+        if (t !== 'modes') return;
+        if (!draft && config) { draft = clone(config); lastSig = JSON.stringify(config); }
+        renderModes();
+        await Promise.allSettled([loadFeeds(), loadClients(), loadTemplates(), loadApprovals(), loadObs()]);
+        renderModes();
+      }
+      $('tabOverview').onclick = () => setTab('overview');
+      $('tabModes').onclick = () => setTab('modes');
+      async function goToSection(id) {
+        const map = { feeds: 'feedsSec', clients: 'clientsSec', templates: 'templatesSec' };
+        const target = map[id] || id;
+        if (['modes', 'approvals', 'feedsSec', 'clientsSec', 'templatesSec'].includes(target)) { await setTab('modes'); if (target === 'approvals') focusApprovalCard(); }
+        $(target)?.scrollIntoView();
+      }
+      // Feeds change while the page is open; look every few seconds, only while Modes shows.
+      poll(loadFeeds, 3000, () => tab === 'modes' && !document.hidden);
+    </script>
+  </body>
+</html>

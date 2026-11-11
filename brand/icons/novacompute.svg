@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>NovaCompute</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff5c8a"/>
+      <stop offset="1" stop-color="#a3124a"/>
+    </linearGradient>
+    <radialGradient id="wash" cx="0.22" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="0" y1="240" x2="0" y2="820">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6ecf5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#a3124a" flood-opacity="0.55"/>
+    </filter>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#wash)"/>
+    <path d="M258 190 C261.5 238 272 248.5 320 252 C272 255.5 261.5 266 258 314 C254.5 266 244 255.5 196 252 C244 248.5 254.5 238 258 190Z" fill="#fff" opacity="0.9"/>
+    <circle cx="258" cy="252" r="34" fill="#fff" opacity="0.18"/>
+  </g>
+  <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="4"/>
+  <g filter="url(#lift)" fill="url(#ink)" stroke="url(#ink)">
+    <line x1="392" y1="300" x2="392" y2="250" stroke-width="30" stroke-linecap="round"/>
+    <line x1="392" y1="724" x2="392" y2="774" stroke-width="30" stroke-linecap="round"/>
+    <line x1="300" y1="420" x2="250" y2="420" stroke-width="30" stroke-linecap="round"/>
+    <line x1="724" y1="420" x2="774" y2="420" stroke-width="30" stroke-linecap="round"/>
+    <line x1="472" y1="300" x2="472" y2="250" stroke-width="30" stroke-linecap="round"/>
+    <line x1="472" y1="724" x2="472" y2="774" stroke-width="30" stroke-linecap="round"/>
+    <line x1="300" y1="500" x2="250" y2="500" stroke-width="30" stroke-linecap="round"/>
+    <line x1="724" y1="500" x2="774" y2="500" stroke-width="30" stroke-linecap="round"/>
+    <line x1="552" y1="300" x2="552" y2="250" stroke-width="30" stroke-linecap="round"/>
+    <line x1="552" y1="724" x2="552" y2="774" stroke-width="30" stroke-linecap="round"/>
+    <line x1="300" y1="580" x2="250" y2="580" stroke-width="30" stroke-linecap="round"/>
+    <line x1="724" y1="580" x2="774" y2="580" stroke-width="30" stroke-linecap="round"/>
+    <line x1="632" y1="300" x2="632" y2="250" stroke-width="30" stroke-linecap="round"/>
+    <line x1="632" y1="724" x2="632" y2="774" stroke-width="30" stroke-linecap="round"/>
+    <line x1="300" y1="660" x2="250" y2="660" stroke-width="30" stroke-linecap="round"/>
+    <line x1="724" y1="660" x2="774" y2="660" stroke-width="30" stroke-linecap="round"/>
+    <rect x="300" y="300" width="424" height="424" rx="64" stroke="none"/>
+    <path stroke="none" fill="#c2185b" opacity="0.85" d="M550 368 L424 540 L506 540 L474 680 L604 496 L522 496Z"/>
+  </g>
+</svg>

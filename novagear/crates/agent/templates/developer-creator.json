@@ -1,0 +1,695 @@
+{
+  "name": "Developer + Creator",
+  "description": "A developer and creator setup: Development (approvals, builds, deploys, containers), Create (lights, prompter, recording) and Live (streaming). Scene and audio-input keys ship as <pick:...> placeholders to choose in the panel. NovaGuard pushes the sessions, builds, deploy and machine feeds (novaguard.*); feeds nothing pushes yet (nova.*, ship.*, live.*) show a dash.",
+  "modes": [
+    {
+      "id": "dev",
+      "name": "Development",
+      "icon": "marks/novahelm.svg",
+      "accent": "#2563eb",
+      "pages": [
+        {
+          "name": "Home",
+          "keys": [
+            {
+              "label": "Dev",
+              "color": "#2563eb",
+              "icon": "marks/novahelm.svg",
+              "face": {
+                "badge": {
+                  "feed": "approvals.pending"
+                }
+              },
+              "action": {
+                "do": "mode_picker"
+              }
+            },
+            {
+              "label": "Approvals",
+              "color": "#f59e0b",
+              "icon": "lucide/hand.svg",
+              "face": {
+                "value": {
+                  "feed": "approvals.pending"
+                },
+                "glow": "approvals.pending"
+              },
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "open_approvals"
+              }
+            },
+            {
+              "label": "Builds",
+              "color": "#18181b",
+              "icon": "marks/novaguard.svg",
+              "face": {
+                "value": {
+                  "feed": "novaguard.builds.running"
+                }
+              },
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "open_builds"
+              }
+            },
+            {
+              "label": "Deploy",
+              "color": "#065f46",
+              "icon": "lucide/circle-check.svg",
+              "face": {
+                "value": {
+                  "feed": "novaguard.deploy.last"
+                }
+              },
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "open_deploys"
+              }
+            },
+            {
+              "label": "AI runners",
+              "color": "#312e81",
+              "icon": "marks/novacompute.svg",
+              "face": {
+                "value": {
+                  "feed": "novaguard.sessions.working"
+                }
+              },
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "open_runners"
+              }
+            },
+            {
+              "label": "Containers",
+              "color": "#0f172a",
+              "icon": "lucide/box.svg",
+              "face": {
+                "value": {
+                  "feed": "ship.containers.up"
+                }
+              },
+              "action": {
+                "do": "client_event",
+                "client": "ship",
+                "name": "open"
+              }
+            },
+            {
+              "label": "Pause all",
+              "color": "#3f3f46",
+              "icon": "lucide/pause.svg",
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "pause_all"
+              }
+            },
+            {
+              "label": "Focus off",
+              "color": "#1e1b4b",
+              "icon": "lucide/moon.svg",
+              "states": [
+                {
+                  "label": "Focus off",
+                  "color": "#1e1b4b",
+                  "icon": "lucide/moon.svg",
+                  "action": {
+                    "do": "client_event",
+                    "client": "nova",
+                    "name": "focus",
+                    "value": "on"
+                  }
+                },
+                {
+                  "label": "Focus on",
+                  "color": "#4338ca",
+                  "icon": "lucide/moon.svg",
+                  "face": {
+                    "ring": "#c7d2fe"
+                  },
+                  "action": {
+                    "do": "client_event",
+                    "client": "nova",
+                    "name": "focus",
+                    "value": "off"
+                  }
+                }
+              ],
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "focus",
+                "value": "on"
+              }
+            }
+          ],
+          "dials": []
+        }
+      ],
+      "strip": [
+        {
+          "kind": "gauge",
+          "label": "MACHINE",
+          "feed": "system.mem.pct",
+          "sub": "memory"
+        },
+        {
+          "kind": "choice",
+          "label": "AUTONOMY",
+          "feed": "nova.autonomy",
+          "commit": "turn",
+          "sub": "asks before deploys",
+          "options": [
+            {
+              "label": "Ask",
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "autonomy",
+                "value": "ask"
+              }
+            },
+            {
+              "label": "Safe",
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "autonomy",
+                "value": "safe"
+              }
+            },
+            {
+              "label": "Full",
+              "action": {
+                "do": "client_event",
+                "client": "nova",
+                "name": "autonomy",
+                "value": "full"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "dots",
+          "label": "CONTAINERS",
+          "feed": "ship.containers",
+          "dial": {
+            "label": "Containers",
+            "turn_left": {
+              "do": "client_event",
+              "client": "ship",
+              "name": "scroll",
+              "value": -1
+            },
+            "turn_right": {
+              "do": "client_event",
+              "client": "ship",
+              "name": "scroll",
+              "value": 1
+            },
+            "press": {
+              "do": "client_event",
+              "client": "ship",
+              "name": "restart"
+            }
+          }
+        },
+        {
+          "kind": "value",
+          "label": "SESSIONS",
+          "value": {
+            "feed": "novaguard.sessions.open"
+          },
+          "sub": {
+            "feed": "novaguard.sessions.working"
+          },
+          "press": {
+            "do": "client_event",
+            "client": "nova",
+            "name": "open_session"
+          }
+        }
+      ],
+      "popups": true,
+      "approval_slots": {
+        "approvals": 1,
+        "details": 5,
+        "approve": 6,
+        "deny": 7
+      }
+    },
+    {
+      "id": "create",
+      "name": "Create",
+      "icon": "marks/novagear.svg",
+      "accent": "#d97706",
+      "pages": [
+        {
+          "name": "Home",
+          "keys": [
+            {
+              "label": "Create",
+              "color": "#d97706",
+              "icon": "marks/novagear.svg",
+              "face": {
+                "badge": {
+                  "feed": "approvals.pending"
+                }
+              },
+              "action": {
+                "do": "mode_picker"
+              }
+            },
+            {
+              "label": "Record",
+              "color": "#b91c1c",
+              "icon": "lucide/radio.svg",
+              "follow": "obs.recording",
+              "states": [
+                {
+                  "label": "Record",
+                  "color": "#3f1d1d",
+                  "icon": "lucide/radio.svg",
+                  "action": {
+                    "do": "sequence",
+                    "steps": [
+                      {
+                        "action": {
+                          "do": "obs_record_toggle"
+                        }
+                      },
+                      {
+                        "action": {
+                          "do": "prompter_play_pause"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "label": "REC",
+                  "color": "#b91c1c",
+                  "icon": "lucide/radio.svg",
+                  "face": {
+                    "value": {
+                      "feed": "obs.record.time"
+                    },
+                    "ring": "#fecaca"
+                  },
+                  "action": {
+                    "do": "sequence",
+                    "steps": [
+                      {
+                        "action": {
+                          "do": "obs_record_toggle"
+                        }
+                      },
+                      {
+                        "action": {
+                          "do": "prompter_play_pause"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "action": {
+                "do": "sequence",
+                "steps": [
+                  {
+                    "action": {
+                      "do": "obs_record_toggle"
+                    }
+                  },
+                  {
+                    "action": {
+                      "do": "prompter_play_pause"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "label": "Interview",
+              "color": "#78350f",
+              "icon": "lucide/lightbulb.svg",
+              "states": [
+                {
+                  "label": "Interview",
+                  "color": "#78350f",
+                  "icon": "lucide/lightbulb.svg",
+                  "action": {
+                    "do": "light_set",
+                    "on": true,
+                    "brightness": 70,
+                    "kelvin": 4800
+                  }
+                },
+                {
+                  "label": "Bright",
+                  "color": "#a16207",
+                  "icon": "lucide/lightbulb.svg",
+                  "action": {
+                    "do": "light_set",
+                    "on": true,
+                    "brightness": 100,
+                    "kelvin": 5600
+                  }
+                }
+              ],
+              "action": {
+                "do": "light_set",
+                "on": true,
+                "brightness": 70,
+                "kelvin": 4800
+              }
+            },
+            {
+              "label": "Prompter",
+              "color": "#27272a",
+              "icon": "lucide/play.svg",
+              "action": {
+                "do": "prompter_play_pause"
+              }
+            },
+            {
+              "label": "Mic live",
+              "color": "#14532d",
+              "icon": "lucide/mic.svg",
+              "follow": "mic.muted",
+              "states": [
+                {
+                  "label": "Mic live",
+                  "color": "#14532d",
+                  "icon": "lucide/mic.svg",
+                  "action": {
+                    "do": "mic_mute_toggle"
+                  }
+                },
+                {
+                  "label": "Muted",
+                  "color": "#b91c1c",
+                  "icon": "lucide/mic-off.svg",
+                  "action": {
+                    "do": "mic_mute_toggle"
+                  }
+                }
+              ],
+              "action": {
+                "do": "mic_mute_toggle"
+              }
+            },
+            {
+              "label": "Camera",
+              "color": "#0c4a6e",
+              "icon": "lucide/user.svg",
+              "action": {
+                "do": "obs_scene",
+                "scene": "<pick:scene>"
+              }
+            },
+            {
+              "label": "Screen + cam",
+              "color": "#155e75",
+              "icon": "lucide/monitor.svg",
+              "action": {
+                "do": "obs_scene",
+                "scene": "<pick:scene>"
+              }
+            },
+            {
+              "label": "Marker",
+              "color": "#27272a",
+              "icon": "lucide/bookmark.svg",
+              "action": {
+                "do": "obs_chapter_marker"
+              }
+            }
+          ],
+          "dials": []
+        }
+      ],
+      "strip": [
+        {
+          "kind": "bar",
+          "label": "LIGHTS",
+          "feed": "lights.brightness",
+          "sub": {
+            "feed": "lights.kelvin"
+          },
+          "dial": {
+            "label": "Lights",
+            "turn": {
+              "do": "light_brightness_step",
+              "step": 5
+            },
+            "alt_turn": {
+              "do": "light_kelvin_step",
+              "step": 100
+            }
+          }
+        },
+        {
+          "kind": "value",
+          "label": "PROMPTER",
+          "value": {
+            "feed": "prompter.speed"
+          },
+          "dial": {
+            "label": "Prompter",
+            "turn": {
+              "do": "prompter_speed_step",
+              "step": 1
+            },
+            "press": {
+              "do": "prompter_restart"
+            }
+          }
+        },
+        {
+          "kind": "meter",
+          "label": "MIC",
+          "feed": "obs.meter.<pick:mic>",
+          "dial": {
+            "label": "Mic",
+            "turn": {
+              "do": "obs_input_volume_step",
+              "input": "<pick:mic>",
+              "step": 1
+            },
+            "press": {
+              "do": "obs_input_mute_toggle",
+              "input": "<pick:mic>"
+            }
+          }
+        },
+        {
+          "kind": "value",
+          "label": "RECORDING",
+          "value": {
+            "feed": "obs.record.time"
+          },
+          "press": {
+            "do": "obs_chapter_marker"
+          }
+        }
+      ],
+      "popups": false
+    },
+    {
+      "id": "live",
+      "name": "Live",
+      "icon": "lucide/radio.svg",
+      "accent": "#7c3aed",
+      "pages": [
+        {
+          "name": "Home",
+          "keys": [
+            {
+              "label": "Live",
+              "color": "#7c3aed",
+              "icon": "lucide/radio.svg",
+              "face": {
+                "badge": {
+                  "feed": "approvals.pending"
+                }
+              },
+              "action": {
+                "do": "mode_picker"
+              }
+            },
+            {
+              "label": "On air",
+              "color": "#14532d",
+              "icon": "lucide/radio.svg",
+              "hold_ms": 1000,
+              "follow": "obs.streaming",
+              "states": [
+                {
+                  "label": "On air",
+                  "color": "#14532d",
+                  "icon": "lucide/radio.svg",
+                  "action": {
+                    "do": "obs_stream_toggle"
+                  }
+                },
+                {
+                  "label": "ON AIR",
+                  "color": "#dc2626",
+                  "icon": "lucide/radio.svg",
+                  "face": {
+                    "value": {
+                      "feed": "obs.stream.time"
+                    },
+                    "ring": "#fecaca"
+                  },
+                  "action": {
+                    "do": "obs_stream_toggle"
+                  }
+                }
+              ],
+              "action": {
+                "do": "obs_stream_toggle"
+              }
+            },
+            {
+              "label": "Starting soon",
+              "color": "#4c1d95",
+              "icon": "lucide/clock.svg",
+              "action": {
+                "do": "obs_scene",
+                "scene": "<pick:scene>"
+              }
+            },
+            {
+              "label": "Game · capture",
+              "color": "#1e293b",
+              "icon": "lucide/gamepad-2.svg",
+              "action": {
+                "do": "obs_scene",
+                "scene": "<pick:scene>"
+              }
+            },
+            {
+              "label": "Just chatting",
+              "color": "#4c1d95",
+              "icon": "lucide/message-circle.svg",
+              "action": {
+                "do": "obs_scene",
+                "scene": "<pick:scene>"
+              }
+            },
+            {
+              "label": "BRB",
+              "color": "#1e293b",
+              "icon": "lucide/coffee.svg",
+              "action": {
+                "do": "obs_scene",
+                "scene": "<pick:scene>"
+              }
+            },
+            {
+              "label": "Mic live",
+              "color": "#14532d",
+              "icon": "lucide/mic.svg",
+              "follow": "mic.muted",
+              "states": [
+                {
+                  "label": "Mic live",
+                  "color": "#14532d",
+                  "icon": "lucide/mic.svg",
+                  "action": {
+                    "do": "mic_mute_toggle"
+                  }
+                },
+                {
+                  "label": "Muted",
+                  "color": "#b91c1c",
+                  "icon": "lucide/mic-off.svg",
+                  "action": {
+                    "do": "mic_mute_toggle"
+                  }
+                }
+              ],
+              "action": {
+                "do": "mic_mute_toggle"
+              }
+            },
+            {
+              "label": "Clip 30 s",
+              "color": "#27272a",
+              "icon": "lucide/scissors.svg",
+              "action": {
+                "do": "obs_replay_save"
+              }
+            }
+          ],
+          "dials": []
+        }
+      ],
+      "strip": [
+        {
+          "kind": "sparkline",
+          "label": "VIEWERS",
+          "feed": "live.viewers"
+        },
+        {
+          "kind": "value",
+          "label": "HEALTH",
+          "value": {
+            "feed": "obs.stream.kbps"
+          },
+          "sub": {
+            "feed": "obs.stream.dropped"
+          }
+        },
+        {
+          "kind": "meter",
+          "label": "GAME",
+          "feed": "obs.meter.<pick:game>",
+          "dial": {
+            "label": "Game audio",
+            "turn": {
+              "do": "obs_input_volume_step",
+              "input": "<pick:game>",
+              "step": 1
+            },
+            "press": {
+              "do": "obs_input_mute_toggle",
+              "input": "<pick:game>"
+            }
+          }
+        },
+        {
+          "kind": "message",
+          "label": "CHAT",
+          "value": {
+            "feed": "live.chat"
+          }
+        }
+      ],
+      "popups": false
+    }
+  ],
+  "mode_rules": [
+    {
+      "when": {
+        "on": "obs_streaming"
+      },
+      "mode": "live"
+    },
+    {
+      "when": {
+        "on": "obs_recording"
+      },
+      "mode": "create"
+    }
+  ],
+  "images": {}
+}

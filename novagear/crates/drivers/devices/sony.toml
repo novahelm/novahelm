@@ -1,0 +1,28 @@
+# Device records.
+# Some rows were checked on real hardware; rows marked `# unconfirmed` are
+# best-known values not yet verified.
+
+[[vendor]]
+vid = 0x054c
+name = "Sony"
+kind = "controller"
+
+[[device]]
+usb = "054c:0ce6"
+name = "DualSense Controller"
+kind = "controller"
+family = "none"
+
+# unconfirmed: model name not verified
+[[device]]
+usb = "054c:05c4"
+name = "DualShock 4 Controller"
+kind = "controller"
+family = "none"
+
+# unconfirmed: model name not verified
+[[device]]
+usb = "054c:09cc"
+name = "DualShock 4 Controller (v2)"
+kind = "controller"
+family = "none"

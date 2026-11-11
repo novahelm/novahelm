@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NovaGear Prompter</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden; cursor: none; }
+      #wrap { position: absolute; inset: 0; overflow: hidden; }
+      #text { padding: 45vh 6vw 100vh; white-space: pre-wrap; font: 600 64px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; will-change: transform; }
+      #wrap.mirror { transform: scaleX(-1); }
+      #marker { position: fixed; left: 0; right: 0; top: 40vh; height: 0; border-top: 2px solid rgba(240, 166, 58, .45); pointer-events: none; }
+      #hint { position: fixed; bottom: 10px; left: 0; right: 0; text-align: center; font: 13px system-ui, sans-serif; color: #777; transition: opacity 1s; }
+      #hint.gone { opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap"><div id="text"></div></div>
+    <div id="marker"></div>
+    <div id="hint">
+      Space play/pause · ↑↓ speed · R restart · M mirror · F fullscreen on the Prompter · wheel to
+      nudge
+    </div>
+    <script>
+      // The URL carries a single-use code, never the agent's token (it would land in browser
+      // history). Trade it for a session kept in this tab's sessionStorage, which windows this
+      // page opens inherit, and take the code out of the address bar.
+      async function startSession() {
+        const m = location.hash.match(/code=([0-9a-f]{32})/);
+        history.replaceState(null, '', location.pathname);
+        if (m) {
+          const r = await fetch('/api/panel-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: m[1] }) });
+          if (r.ok) {
+            const t = (await r.json()).token;
+            try { sessionStorage.setItem('novagear-session', t); } catch {}
+            return t;
+          }
+        }
+        try { return sessionStorage.getItem('novagear-session') || ''; } catch { return ''; }
+      }
+      let token = '';
+      const api = (path, opts = {}) => fetch('/api' + path, { ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } }).then(r => r.json());
+      const act = a => api('/action', { method: 'POST', body: JSON.stringify(a) });
+      const text = document.getElementById('text'), wrap = document.getElementById('wrap');
+
+      let pos = 0, speed = 60, playing = false, restarts = null, last = performance.now();
+
+      function applyConfig(c) {
+        speed = c.speed;
+        text.textContent = c.script || 'Paste a script in the NovaGear panel.';
+        text.style.fontSize = c.font_size + 'px';
+        wrap.classList.toggle('mirror', c.mirror);
+      }
+
+      function applyRun(r) {
+        if (restarts !== null && r.restarts !== restarts) pos = 0;
+        restarts = r.restarts;
+        playing = r.playing;
+      }
+
+      async function load() {
+        const p = await api('/prompter');
+        applyConfig(p.config);
+        applyRun(p.run);
+      }
+
+      function frame(now) {
+        const dt = Math.min(now - last, 100) / 1000;
+        last = now;
+        if (playing) pos = Math.min(pos + speed * dt, Math.max(0, text.scrollHeight - innerHeight * 0.5));
+        text.style.transform = `translateY(${-pos}px)`;
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+
+      // Fullscreen on the Prompter's screen where the browser lets us pick screens (Chrome, Edge).
+      async function fullscreenOnPrompter() {
+        let screen;
+        if ('getScreenDetails' in window) {
+          try {
+            const d = await window.getScreenDetails();
+            screen = d.screens.find(s => /prompter|displaylink/i.test(s.label))
+              || d.screens.filter(s => !s.isPrimary).sort((a, b) => a.width * a.height - b.width * b.height)[0];
+          } catch { /* permission refused: plain fullscreen */ }
+        }
+        await document.documentElement.requestFullscreen(screen ? { screen } : {});
+      }
+
+      addEventListener('keydown', e => {
+        if (e.key === ' ') { e.preventDefault(); act({ do: 'prompter_play_pause' }); }
+        else if (e.key === 'ArrowUp') act({ do: 'prompter_speed_step', step: 10 });
+        else if (e.key === 'ArrowDown') act({ do: 'prompter_speed_step', step: -10 });
+        else if (e.key === 'r' || e.key === 'R') act({ do: 'prompter_restart' });
+        else if (e.key === 'm' || e.key === 'M') wrap.classList.toggle('mirror');
+        else if (e.key === 'f' || e.key === 'F') fullscreenOnPrompter().catch(() => {});
+      });
+      addEventListener('wheel', e => { pos = Math.max(0, pos + e.deltaY); }, { passive: true });
+      setTimeout(() => document.getElementById('hint').classList.add('gone'), 6000);
+
+      startSession().then(t => {
+        token = t;
+        if (!token) { text.textContent = 'This link has expired. Open the prompter again from NovaGear.'; return; }
+        const es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+        es.onopen = load;
+        es.onmessage = m => {
+          const ev = JSON.parse(m.data);
+          if (ev.type === 'prompter') applyRun(ev.data);
+          if (ev.type === 'config') load();
+        };
+      });
+    </script>
+  </body>
+</html>

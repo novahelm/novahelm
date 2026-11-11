@@ -1,0 +1,17 @@
+# Device records. References read (not copied): OpenRazer.
+# Some rows were checked on real hardware; rows marked `# unconfirmed` are
+# best-known values not yet verified.
+
+[[vendor]]
+vid = 0x1532
+name = "Razer"
+kind = "mouse"
+
+[[device]]
+usb = "1532:0099"
+name = "Razer Basilisk V3"
+kind = "mouse"
+family = "razer90"
+quirks = { interface = 3, transaction_id = 0x1F }
+# unconfirmed: firmware tool/URL not verified
+firmware = { policy = "vendor_tool", tool = "Razer Synapse", url = "https://www.razer.com/synapse-4" }

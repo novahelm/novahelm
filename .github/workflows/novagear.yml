@@ -1,0 +1,52 @@
+name: novagear
+
+# NovaGear's Rust workspace and Mac app, and NovaUI. Never signs, installs or deploys.
+
+on:
+  push:
+    branches: [main]
+    paths: ["novagear/**", "novaui/**", "brand/**", ".github/workflows/novagear.yml"]
+  pull_request:
+    paths: ["novagear/**", "novaui/**", "brand/**", ".github/workflows/novagear.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: novagear-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: novagear
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt && rustup default stable
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            novagear/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('novagear/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --locked
+
+  swift:
+    runs-on: macos-26
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [novaui, novagear/apple]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - env:
+          PACKAGE: ${{ matrix.package }}
+        run: swift --version && swift test --package-path "$PACKAGE"

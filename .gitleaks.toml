@@ -1,0 +1,23 @@
+# Secret scan for the public repository. Run before every push of a new export:
+#   scripts/gitleaks.sh dir . --config .gitleaks.toml --redact
+#   scripts/gitleaks.sh git . --config .gitleaks.toml --redact
+# (the script downloads the pinned gitleaks on macOS, Linux or Windows, and checks it before running it)
+title = "novahelm public"
+
+[extend]
+useDefault = true
+
+# Test fixtures that are made up on purpose and look like secrets. Keep this list short and exact: a value that
+# matches one of these is never reported, so a loose pattern could hide a real secret.
+[allowlist]
+description = "made-up tokens and passwords in NovaGear tests"
+regexTarget = "match"
+regexes = [
+  '''agent-token-0123456789012345678901234567890123''',
+  '''some-other-token-x+''',
+  '''supersecretpassword''',
+  '''test-token''',
+  '''[a-z]+-secret-\d{4}''',
+  '''obs-pass-7731''',
+  '''wrong-client-token-8820''',
+]

@@ -1,0 +1,22 @@
+[package]
+name = "novagear-tray"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "novagear-tray"
+path = "src/main.rs"
+
+[dependencies]
+novagear-core = { path = "../core" }
+anyhow.workspace = true
+serde_json.workspace = true
+# Same pin as NovaLink's tray; its muda re-export provides the menu types.
+tray-icon = { version = "=0.26.1", default-features = false }
+tao = { version = "0.34", default-features = false }
+
+[build-dependencies]
+embed-resource = "3.0"

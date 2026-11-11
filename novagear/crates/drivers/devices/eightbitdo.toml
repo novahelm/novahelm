@@ -1,0 +1,16 @@
+# Device records.
+# Some rows were checked on real hardware; rows marked `# unconfirmed` are
+# best-known values not yet verified.
+
+[[vendor]]
+vid = 0x2dc8
+name = "8BitDo"
+kind = "controller"
+
+[[device]]
+usb = "2dc8:5201"
+name = "8BitDo Retro Keyboard"
+kind = "keyboard"
+family = "none"
+# unconfirmed: firmware tool/URL not verified
+firmware = { policy = "vendor_tool", tool = "8BitDo Firmware Updater", url = "https://support.8bitdo.com" }

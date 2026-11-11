@@ -1,0 +1,63 @@
+name: Request a device
+description: Ask for NovaGear to list or control a device it doesn't know yet.
+title: "Device: "
+labels: ["device", "novagear"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Plug the device in, open the NovaGear panel, and click **Copy device details** next to it. That copies
+        the device's ids and a draft record, never a serial number. If the device isn't listed at all (a network light,
+        for example), fill in what you can below.
+
+        Want to add it yourself? See `novagear/crates/drivers/devices/README.md`.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Maker and model, as on the box.
+      placeholder: Logitech Litra Glow
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Copy device details output
+      description: Paste what the panel copied. Remove anything that looks like a serial number before posting.
+      render: markdown
+  - type: dropdown
+    id: want
+    attributes:
+      label: What would you like NovaGear to do with it?
+      multiple: true
+      options:
+        - Just list it with the right name
+        - Turn it on and off, set brightness or colour
+        - Use it as a Stream Deck-style controller (keys, dials)
+        - Read or set mouse settings (DPI, lighting)
+        - Show its firmware version or updates
+        - Something else (say below)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and NovaGear version
+      placeholder: macOS 26.1, NovaGear 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Device firmware version, if you know it
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Links to the vendor's docs or open-source projects that support it, how the vendor app talks to it, and whether you can test changes on real hardware.
+  - type: checkboxes
+    id: test
+    attributes:
+      label: Testing
+      options:
+        - label: I own this device and can test a build or a record on it.

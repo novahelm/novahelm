@@ -1,0 +1,43 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# current_thread runtime and only the pieces the agent uses keep idle memory small.
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+  "env-filter",
+  "json",
+] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
+clap = { version = "4", features = ["derive"] }
+hidapi = { version = "2", default-features = false, features = ["macos-shared-device"] }
+nusb = "0.1"
+mdns-sd = "0.13"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif"] }
+ab_glyph = "0.2"
+# No text/system-fonts/raster-images features: SVG paths only, no file or font access.
+resvg = { version = "0.45", default-features = false }
+dirs = "6"
+getrandom = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

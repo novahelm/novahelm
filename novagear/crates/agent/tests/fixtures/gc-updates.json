@@ -1,0 +1,15 @@
+{
+  "sd-mac": {
+    "downloadURL": "https://edge.elgato.com/egc/macos/sd/Stream_Deck_7.6.0.23012.pkg",
+    "enabled": true,
+    "fileURL": "https://edge.elgato.com/egc/macos/sd/Stream_Deck_7.6.0.23012.pkg",
+    "minimumOS": "macOS Ventura 13.0",
+    "version": "7.6.0"
+  },
+  "cc-mac": {
+    "enabled": false,
+    "version": "1.9.2",
+    "downloadURL": "https://edge.elgato.com/egc/macos/eccm/1.9.2/ElgatoControlCenter-1.9.2.21032.app.zip",
+    "minimumOS": "macOS Sonoma 14"
+  }
+}

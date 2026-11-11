@@ -1,0 +1,66 @@
+[package]
+name = "novagear-agent"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+name = "novagear_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "novagear-agent"
+path = "src/main.rs"
+
+[dependencies]
+novagear-core = { path = "../core" }
+novagear-drivers = { path = "../drivers" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+axum.workspace = true
+clap.workspace = true
+getrandom.workspace = true
+futures-util = { version = "0.3", default-features = false }
+mdns-sd.workspace = true
+sha2.workspace = true
+base64 = "0.22"
+# Plain ws:// to OBS on this machine; no TLS needed.
+tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+image.workspace = true
+# The one TLS client in the agent: the firmware check reads Elgato's catalog and zip headers.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+miniz_oxide = "0.8"
+
+# Local time and system load for the clock/system feeds (already in the build tree).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.24"
+# The app and display events behind app_frontmost rules and deck sleep (macos_events.rs).
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "NSNotification",
+  "NSOperation",
+  "NSString",
+  "NSDictionary",
+  "NSObject",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "NSWorkspace",
+  "NSRunningApplication",
+] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
