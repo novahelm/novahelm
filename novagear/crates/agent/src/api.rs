@@ -30,7 +30,42 @@ const TOUCH_ICON: &[u8] = include_bytes!("../panel/apple-touch-icon.png");
 
 type AppState = Arc<Agent>;
 
+/// The TCP router: the shared routes behind the Host check (DNS-rebinding defence).
 pub fn router(agent: Arc<Agent>) -> Router {
+    shared_router(agent).layer(middleware::from_fn(check_host))
+}
+
+/// The Unix-socket router: the same routes and token layer, no Host check. The socket is
+/// 0600, so there is no browser to rebind and the Host header carries nothing.
+pub fn socket_router(agent: Arc<Agent>) -> Router {
+    shared_router(agent)
+}
+
+/// Binds the agent's Unix socket at `path`: a stale file is removed first, the bind runs
+/// under umask 0077, and the mode is forced to 0600 afterwards.
+#[cfg(unix)]
+pub fn bind_socket(path: &std::path::Path) -> anyhow::Result<tokio::net::UnixListener> {
+    use anyhow::Context;
+    use std::os::unix::fs::PermissionsExt;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e).with_context(|| format!("removing {}", path.display())),
+    }
+    // SAFETY: umask only swaps the process file-creation mask. Restored right after bind.
+    let old = unsafe { libc::umask(0o077) };
+    let bound = tokio::net::UnixListener::bind(path);
+    unsafe { libc::umask(old) };
+    let listener = bound.with_context(|| format!("binding {}", path.display()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("chmod {}", path.display()))?;
+    Ok(listener)
+}
+
+fn shared_router(agent: Arc<Agent>) -> Router {
     let api = Router::new()
         .route("/devices", get(devices))
         .route("/status", get(status))
@@ -92,7 +127,6 @@ pub fn router(agent: Arc<Agent>) -> Router {
             get(|| async { ([(header::CONTENT_TYPE, "image/png")], TOUCH_ICON) }),
         )
         .nest("/api", api)
-        .layer(middleware::from_fn(check_host))
         .with_state(agent)
 }
 

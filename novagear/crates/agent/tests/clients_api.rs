@@ -356,6 +356,21 @@ async fn client_event_reaches_only_its_client() {
         .await
         .unwrap();
     assert!(b.read_until("ping", Duration::from_secs(3)).await.is_some());
+    // The Pause all key's value reaches the client as a bare number, which NovaGuard reads strictly.
+    agent
+        .run(Action::ClientEvent {
+            client: "aa".into(),
+            name: "pause_all".into(),
+            value: Some(json!(1)),
+        })
+        .await
+        .unwrap();
+    assert!(
+        a.read_until(r#""name":"pause_all","value":1"#, Duration::from_secs(3))
+            .await
+            .is_some(),
+        "a gets the press"
+    );
 
     // Nobody listening, or no such client: dropped, and the action still succeeds.
     agent

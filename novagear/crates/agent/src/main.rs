@@ -122,11 +122,47 @@ fn run(args: Args) -> Result<()> {
         // Graceful shutdown waits for every connection to close, but event streams (the
         // tray, an open panel) never do on their own, so give them a moment and then go.
         let (stopping, stopped) = tokio::sync::oneshot::channel::<()>();
+        // The TCP listener is bound, which proves no other agent owns the socket path, so
+        // the socket can be bound now. A failure leaves the agent on TCP alone.
+        #[cfg(unix)]
+        let (socket_server, socket_file) = {
+            let path = novagear_core::config::socket_path();
+            let listener = path
+                .as_ref()
+                .map_err(|e| anyhow::anyhow!("{e:#}"))
+                .and_then(|p| api::bind_socket(p));
+            match (listener, path) {
+                (Ok(l), Ok(p)) => {
+                    tracing::info!("NovaGear agent on {}", p.display());
+                    (
+                        Some(axum::serve(l, api::socket_router(agent.clone()))),
+                        Some(p),
+                    )
+                }
+                (Err(e), _) => {
+                    tracing::warn!("no Unix socket, TCP only: {e:#}");
+                    (None, None)
+                }
+                _ => (None, None),
+            }
+        };
         let server = axum::serve(listener, api::router(agent)).with_graceful_shutdown(async move {
             shutdown().await;
             let _ = stopping.send(());
         });
+        #[cfg(unix)]
+        let socket_serving = async {
+            if let Some(s) = socket_server {
+                let r = s.await;
+                tracing::warn!("Unix socket server stopped: {r:?}");
+            }
+            std::future::pending::<()>().await
+        };
+        #[cfg(not(unix))]
+        let socket_serving = std::future::pending::<()>();
         tokio::select! {
+            // Never completes: a socket server that dies is logged and TCP carries on.
+            _ = socket_serving => {}
             r = server => {
                 // A server that fails still owes the last second's changes to disk.
                 flush.flush_saves();
@@ -139,6 +175,10 @@ fn run(args: Args) -> Result<()> {
         }
         // A knob turn or mode change from the last second is still waiting on its timer.
         flush.flush_saves();
+        #[cfg(unix)]
+        if let Some(p) = socket_file {
+            let _ = std::fs::remove_file(p);
+        }
         Ok::<_, anyhow::Error>(())
     })?;
     tracing::info!("NovaGear agent {} stopped", env!("CARGO_PKG_VERSION"));

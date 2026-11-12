@@ -99,7 +99,7 @@ the option whose label equals its feed's text, ignoring case. A panel's knob bel
 
 A feed is a named value that key faces and strip panels show (`system.mem.pct`, `obs.record.time`,
 `novaguard.builds.running`). Built-in feeds run only while something visible reads them. Any local program can push
-its own. All calls go to `127.0.0.1:47820` with a bearer token (the agent token, or a client token, see below):
+its own. The examples go to `127.0.0.1:47820` with a bearer token (the agent token, or a client token, see below):
 
 ```bash
 TOKEN=ngc_...   # a client token; the main agent token works too
@@ -153,12 +153,25 @@ token may push feeds under its own prefix, create, read and cancel its own appro
 receive its own named events. It cannot call `/api/action`, `/api/config`, `/api/logs` or anything else. Rate caps:
 feeds 10/s, approvals 1 per 5 s and 20 waiting.
 
-A key bound to `{"do": "client_event", "client": "nova", "name": "pause_all", "value": "..."}` sends one named event to
-that client only. The client reads them from its stream and decides what they mean:
+A key bound to `{"do": "client_event", "client": "novaguard", "name": "pause_all"}` sends one named event to that
+client only. The client reads them from its stream and decides what they mean:
 
 ```bash
 curl -N http://127.0.0.1:47820/api/clients/me/events -H "Authorization: Bearer $TOKEN"
 ```
+
+### The Unix socket (NovaGuard's channel)
+
+The agent also serves the same API, with the same tokens, on a Unix socket: `~/Library/Application Support/NovaGear/agent.sock`
+(`agent.sock` in the config dir), mode 0600. The Host-header check doesn't apply there. **NovaGuard uses only the socket** (not
+port 47820), and checks the running program on it before sending anything: identifier `com.novahelm.novagear.agent`, the same
+signing certificate as NovaGuard, hardened runtime on. So NovaGear must be built with `NOVAGEAR_IDENTITY` (a real team
+identity) for NovaGuard's feeds, deck approvals and Pause all to work; an ad hoc build is ignored. The TCP port stays for the
+panel, the CLI and other clients.
+
+NovaGuard now uses this for waiting-ship and deploy approvals, the Pause all key (client `novaguard`, feed
+`novaguard.paused`) and its feeds. NovaGuard is a separate app and is not part of this repository; NovaGear works
+without it, and the Pause all key then does nothing.
 
 ### Templates
 
@@ -194,7 +207,7 @@ Elgato's public update feed (turn it off with "Check for firmware updates" in th
 
 - `crates/core`: device types, actions, bindings, config (`~/Library/Application Support/NovaGear/config.json`).
 - `crates/drivers`: `keylight`, `streamdeck`, `razer`, `catalog` (USB listing), `draw` (key images).
-- `crates/agent`: `novagear-agent`, the local API on `127.0.0.1:47820` (token in the config dir) and the panel pages in
+- `crates/agent`: `novagear-agent`, the local API on `127.0.0.1:47820` and on the 0600 socket `agent.sock` (token in the config dir) and the panel pages in
   `panel/`.
 - `crates/cli`: `novagear`.
 - `apple/`: `NovaGear.app`, the Mac menu bar app (NovaGearKit: agent client and menu text; NovaGearApp: the popover).
