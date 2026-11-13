@@ -1,0 +1,42 @@
+[package]
+name = "novalink-net"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+novalink-proto = { path = "../proto" }
+ed25519-dalek.workspace = true
+rand_core.workspace = true
+sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+keyring.workspace = true
+novalink-core = { path = "../core" }
+quinn.workspace = true
+rustls.workspace = true
+rcgen.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+x509-parser = "0.16"
+mdns-sd.workspace = true
+subtle.workspace = true
+if-addrs = "0.13"
+
+[features]
+test-util = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { workspace = true, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { workspace = true, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { workspace = true, features = ["sync-secret-service"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+novalink-net = { path = ".", features = ["test-util"] }

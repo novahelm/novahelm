@@ -1,0 +1,18 @@
+[package]
+name = "novalink-platform-macos"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+novalink-core = { path = "../core" }
+novalink-proto = { path = "../proto" }
+anyhow.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

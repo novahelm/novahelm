@@ -1,0 +1,10 @@
+[package]
+name = "novalink-proto"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+postcard.workspace = true
+thiserror.workspace = true

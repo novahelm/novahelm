@@ -56,6 +56,8 @@ branch. A check on each pull request looks for the line.
 3. Run the checks for the folder you touched:
    - `novagear/`: `cargo fmt --all --check` and `cargo test --workspace --locked` in `novagear/`, and
      `swift test --package-path novagear/apple` on a Mac.
+   - `novalink/`: `cargo fmt --all --check` and `cargo test --workspace --locked --features novalink-agent/fake` in
+     `novalink/`, and `swift test --package-path novalink/apple` on a Mac.
    - `novaui/`: `swift test --package-path novaui`.
 4. Never commit secrets, tokens, real serial numbers or your own machine's paths. Test fixtures use made-up values.
 5. Open the pull request and describe what changed and how you tested it, including the hardware you tried it on.
