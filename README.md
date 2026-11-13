@@ -6,6 +6,7 @@ the open; more of them move here over time.
 | Folder                   | What it is                                                                                     | Licence    |
 | ------------------------ | ---------------------------------------------------------------------------------------------- | ---------- |
 | [`novagear/`](novagear/) | One small app for Elgato Key Lights, Stream Deck +, the Prompter, capture cards and Razer mice | Apache-2.0 |
+| [`novalink/`](novalink/) | Use every computer on your desk as if each were another monitor (early, macOS and Windows)     | Apache-2.0 |
 | [`novaui/`](novaui/)     | Shared SwiftUI building blocks for the Nova menu bar apps                                      | Apache-2.0 |
 | [`brand/`](brand/)       | The Nova app icons, used by the app builds (trademark rules below)                             | Apache-2.0 |
 

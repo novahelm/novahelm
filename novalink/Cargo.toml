@@ -1,0 +1,38 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+license = "Apache-2.0"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+quinn = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = "0.13"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
+serde_json = "1"
+anyhow = "1"
+tempfile = "3"
+keyring = "3"
+mdns-sd = "0.13"
+subtle = "2"
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["use-std"] }
+hdrhistogram = "7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-appender = "0.2"
+tracing-oslog = "0.2"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+core-graphics = "0.24"
+core-foundation = "0.10"
+windows = "0.61"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "macros"] }

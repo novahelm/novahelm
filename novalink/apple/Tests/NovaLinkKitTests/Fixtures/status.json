@@ -1,0 +1,45 @@
+{
+  "capture": "running",
+  "controller": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "displays": [
+    {
+      "height": 1080.0,
+      "id": 1,
+      "scale": 1.0,
+      "width": 1920.0,
+      "x": 0.0,
+      "y": 0.0
+    }
+  ],
+  "focus": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "layout": {
+    "links": [
+      {
+        "from": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "from_edge": "Right",
+        "to": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "version": 1
+  },
+  "me": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "name": "a",
+  "peers": [
+    {
+      "addr": "127.0.0.1:47979",
+      "clock_offset_us": -35,
+      "connected": true,
+      "dry_inject": false,
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "last_close": null,
+      "lost_datagrams": 0,
+      "name": "b",
+      "path": "Other",
+      "reconnects": 0,
+      "rtt_us": 412
+    }
+  ],
+  "settings": {
+    "swap_ctrl_cmd": false
+  }
+}

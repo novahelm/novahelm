@@ -1,0 +1,58 @@
+{
+  "checks": [
+    {
+      "advice": "",
+      "detail": "granted",
+      "name": "accessibility",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "granted",
+      "name": "input_monitoring",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "reading this machine's keyboard and mouse",
+      "name": "capture",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "1 of 1 paired devices connected",
+      "name": "peer_connected",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "Other, round trip 0.4 ms",
+      "name": "path:b",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "other NovaLink devices found",
+      "name": "discovery",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "estimated for every connected device",
+      "name": "clock_offset",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "0 in the last hour; last close: none",
+      "name": "reconnects",
+      "ok": true
+    },
+    {
+      "advice": "",
+      "detail": "0 in the last day",
+      "name": "safety_releases",
+      "ok": true
+    }
+  ]
+}

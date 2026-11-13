@@ -1,0 +1,90 @@
+name: novalink
+
+# NovaLink's Rust workspace on macOS and Windows, its Mac app, and a check that both downloads still package. Never
+# signs with a real identity, installs, releases or deploys.
+
+on:
+  push:
+    branches: [main]
+    paths: ["novalink/**", "novaui/**", ".github/workflows/novalink.yml"]
+  pull_request:
+    paths: ["novalink/**", "novaui/**", ".github/workflows/novalink.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: novalink-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, windows-latest]
+    name: rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: novalink
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt && rustup default stable
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            novalink/target
+          key: novalink-cargo-${{ runner.os }}-${{ hashFiles('novalink/Cargo.lock') }}
+          restore-keys: novalink-cargo-${{ runner.os }}-
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --locked --features novalink-agent/fake
+
+  swift:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: swift --version && swift test --package-path novalink/apple
+
+  package-macos:
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: novalink
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: cargo build --release --locked --target aarch64-apple-darwin -p novalink-agent -p novalink-cli
+      - run: cargo build --release --locked --target x86_64-apple-darwin -p novalink-agent -p novalink-cli
+      - run: scripts/package-macos.sh dist target/aarch64-apple-darwin/release target/x86_64-apple-darwin/release
+
+  package-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: novalink
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: cargo build --release --locked -p novalink-agent -p novalink-cli -p novalink-tray
+      - name: Package
+        shell: pwsh
+        run: |
+          $stage = "dist/NovaLink-windows"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item target/release/novalink-agent.exe, target/release/novalink.exe, target/release/novalink-tray.exe $stage
+          $env:NOVALINK_SETUP_PAYLOAD = (Resolve-Path $stage).Path
+          cargo build --release --locked -p novalink-setup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item packaging/windows/* $stage
+          Compress-Archive -Path $stage -DestinationPath dist/NovaLink-windows.zip -Force
