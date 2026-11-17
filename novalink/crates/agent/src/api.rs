@@ -23,7 +23,10 @@ use subtle::ConstantTimeEq;
 pub const API_ADDR: &str = "127.0.0.1:7979";
 const ALLOWED_HOSTS: [&str; 2] = ["127.0.0.1:7979", "localhost:7979"];
 const PROOF_LABEL: &[u8] = b"novalink-server-proof";
-const NONCE_BYTES: usize = 16;
+/// The service forwarder's label. Each listener has its own, so a proof from one is useless to
+/// a program posing as the other.
+const FORWARDER_PROOF_LABEL: &[u8] = b"novalink-forwarder-proof";
+pub(crate) const NONCE_BYTES: usize = 16;
 const TOKEN_FILE: &str = "api-token";
 const DEFAULT_EVENT_LIMIT: usize = 200;
 const MAX_EVENT_LIMIT: usize = 5000;
@@ -76,10 +79,10 @@ pub fn encode_hex(bytes: &[u8]) -> String {
     hex(bytes)
 }
 
-fn proof_mac(token: &str, nonce: &[u8]) -> Hmac<Sha256> {
+fn proof_mac(label: &[u8], token: &str, nonce: &[u8]) -> Hmac<Sha256> {
     let mut mac =
         Hmac::<Sha256>::new_from_slice(token.as_bytes()).expect("hmac takes any key length");
-    mac.update(PROOF_LABEL);
+    mac.update(label);
     mac.update(nonce);
     mac
 }
@@ -87,7 +90,7 @@ fn proof_mac(token: &str, nonce: &[u8]) -> Hmac<Sha256> {
 /// HMAC-SHA256 keyed with the token's bytes over `"novalink-server-proof" || nonce`, hex.
 /// Lets a client confirm the listener knows the token before it sends the token.
 pub fn server_proof(token: &str, nonce: &[u8]) -> String {
-    hex(&proof_mac(token, nonce).finalize().into_bytes())
+    hex(&proof_mac(PROOF_LABEL, token, nonce).finalize().into_bytes())
 }
 
 /// Checks a hex proof in constant time.
@@ -95,7 +98,29 @@ pub fn verify_proof(token: &str, nonce: &[u8], proof_hex: &str) -> bool {
     let Some(bytes) = decode_hex(proof_hex) else {
         return false;
     };
-    proof_mac(token, nonce).verify_slice(&bytes).is_ok()
+    proof_mac(PROOF_LABEL, token, nonce)
+        .verify_slice(&bytes)
+        .is_ok()
+}
+
+/// The service forwarder's proof (`channels`): HMAC-SHA256 keyed with the token's bytes over
+/// `"novalink-forwarder-proof" || nonce`, hex. Not interchangeable with [`server_proof`]:
+/// `/v1/hello` answers anyone, so a shared label would let a program that took the forwarder's
+/// port fetch a valid proof from the API.
+pub fn forwarder_proof(token: &str, nonce: &[u8]) -> String {
+    hex(&proof_mac(FORWARDER_PROOF_LABEL, token, nonce)
+        .finalize()
+        .into_bytes())
+}
+
+/// Checks a hex [`forwarder_proof`] in constant time.
+pub fn verify_forwarder_proof(token: &str, nonce: &[u8], proof_hex: &str) -> bool {
+    let Some(bytes) = decode_hex(proof_hex) else {
+        return false;
+    };
+    proof_mac(FORWARDER_PROOF_LABEL, token, nonce)
+        .verify_slice(&bytes)
+        .is_ok()
 }
 
 pub fn decode_hex(s: &str) -> Option<Vec<u8>> {
@@ -1168,6 +1193,13 @@ mod tests {
         assert!(verify_proof(TOKEN, &nonce, &proof));
         assert!(!verify_proof("other-token", &nonce, &proof));
         assert!(!verify_proof(TOKEN, &new_nonce(), &proof));
+        // What the API hands out to anyone is not a proof for the forwarder's port.
+        assert!(!verify_forwarder_proof(TOKEN, &nonce, &proof));
+        assert!(verify_forwarder_proof(
+            TOKEN,
+            &nonce,
+            &forwarder_proof(TOKEN, &nonce)
+        ));
         assert_eq!(
             get(&app, &path, None, "evil.example:7979").await.status(),
             421

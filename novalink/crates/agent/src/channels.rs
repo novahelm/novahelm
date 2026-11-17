@@ -2,7 +2,13 @@
 //! device, and incoming channels to a service registered on this device.
 //!
 //! Outgoing: a client sends `NOVALINK-CONNECT <peer-hex> <service> <api-token>\n`; the agent
-//! answers `OK\n` or `ERR <reason>\n`, then pipes bytes both ways. The peer's agent confirms
+//! answers `OK\n` or `ERR <reason>\n`, then pipes bytes both ways. That line carries the API
+//! token, so a client should first make the listener prove it is this agent: it sends
+//! `NOVALINK-HELLO <nonce-hex>\n` (16 random bytes) and gets `PROOF <hex>\n`
+//! ([`crate::api::forwarder_proof`]), checks it, and only then sends the connect line on the
+//! same connection. The hello is optional and allowed once; a client that skips it is served
+//! as before but has no such check. An agent older than the hello answers it with
+//! `ERR bad preface`. Both lines share one 5 s limit. The peer's agent confirms
 //! the channel with a single `K` byte once its local service accepted (that byte is consumed
 //! here, never shown to the client); a reset instead means the peer refused it.
 //!
@@ -28,6 +34,7 @@ pub const FORWARD_ADDR: &str = "127.0.0.1:7982";
 const API_PORT: u16 = 7979;
 /// A preface line longer than this (newline included) is refused.
 const MAX_PREFACE: usize = 512;
+/// For the whole preface: the optional hello and the connect line together.
 const PREFACE_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -159,8 +166,9 @@ pub async fn serve_on(listener: TcpListener, handle: EngineHandle, token: String
     }
 }
 
-/// Reads one `\n`-terminated line byte by byte (so nothing after it is consumed).
-async fn read_preface(sock: &mut TcpStream) -> Option<String> {
+/// Reads one `\n`-terminated line byte by byte (so nothing after it is consumed), giving up
+/// at `deadline`.
+async fn read_preface(sock: &mut TcpStream, deadline: tokio::time::Instant) -> Option<String> {
     let read = async {
         let mut line = Vec::with_capacity(128);
         loop {
@@ -174,10 +182,7 @@ async fn read_preface(sock: &mut TcpStream) -> Option<String> {
             line.push(b);
         }
     };
-    tokio::time::timeout(PREFACE_TIMEOUT, read)
-        .await
-        .ok()
-        .flatten()
+    tokio::time::timeout_at(deadline, read).await.ok().flatten()
 }
 
 async fn reply_err(sock: &mut TcpStream, why: &str) -> std::io::Result<()> {
@@ -196,9 +201,24 @@ fn parse_peer(s: &str) -> Option<DeviceId> {
 }
 
 async fn client(mut sock: TcpStream, handle: EngineHandle, token: &str) -> std::io::Result<()> {
-    let Some(line) = read_preface(&mut sock).await else {
+    let deadline = tokio::time::Instant::now() + PREFACE_TIMEOUT;
+    let Some(mut line) = read_preface(&mut sock, deadline).await else {
         return reply_err(&mut sock, "bad preface").await;
     };
+    // Optional, once: prove we hold the token before the client sends it.
+    if let Some(nonce) = line.strip_prefix("NOVALINK-HELLO ") {
+        let nonce = crate::api::decode_hex(nonce).filter(|n| n.len() == crate::api::NONCE_BYTES);
+        let Some(nonce) = nonce else {
+            return reply_err(&mut sock, "bad nonce").await;
+        };
+        let proof = crate::api::forwarder_proof(token, &nonce);
+        sock.write_all(format!("PROOF {proof}\n").as_bytes())
+            .await?;
+        let Some(next) = read_preface(&mut sock, deadline).await else {
+            return reply_err(&mut sock, "bad preface").await;
+        };
+        line = next;
+    }
     let parts: Vec<&str> = line.split(' ').collect();
     let [cmd, peer, service, given] = parts[..] else {
         return reply_err(&mut sock, "bad preface").await;
