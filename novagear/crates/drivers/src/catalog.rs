@@ -43,6 +43,36 @@ pub struct UsbDevice {
     pub interfaces: Vec<u8>,
     /// HID usage pages; only looked up for unknown devices.
     pub usage_pages: Vec<u16>,
+    /// The negotiated USB link speed in Mb/s, when the OS says.
+    pub link_mbps: Option<u32>,
+}
+
+/// The id of a USB device: `usb-<vid>-<pid>-<serial>`, or bus and address without a
+/// serial. A device with two USB identities (the Elgato 4K X in 5 and 10 Gbps mode) uses
+/// one of them for both, so it keeps its id when it switches.
+pub fn usb_key(usb: UsbId, serial: Option<&str>, bus: u8, address: u8) -> String {
+    let usb = if crate::elgato4kx::is_4kx(usb) {
+        crate::elgato4kx::MODE_5G
+    } else {
+        usb
+    };
+    match serial {
+        Some(s) => format!("usb-{:04x}-{:04x}-{s}", usb.vid, usb.pid),
+        None => format!("usb-{:04x}-{:04x}-b{bus}a{address}", usb.vid, usb.pid),
+    }
+}
+
+/// nusb's speed as Mb/s. `SuperPlus` covers 10 Gb/s and up; 10 is what it means for the
+/// gear NovaGear knows.
+fn link_mbps(speed: Option<nusb::Speed>) -> Option<u32> {
+    match speed? {
+        nusb::Speed::Low => Some(1),
+        nusb::Speed::Full => Some(12),
+        nusb::Speed::High => Some(480),
+        nusb::Speed::Super => Some(5_000),
+        nusb::Speed::SuperPlus => Some(10_000),
+        _ => None,
+    }
 }
 
 /// What we know about a vendor/product pair. `None` means a device not worth listing
@@ -184,16 +214,7 @@ pub fn list(records: &Records) -> Vec<UsbDevice> {
                 .serial_number()
                 .map(str::to_string)
                 .filter(|s| !s.is_empty() && s != "Not Provided");
-            let key = match &serial {
-                Some(s) => format!("usb-{:04x}-{:04x}-{s}", usb.vid, usb.pid),
-                None => format!(
-                    "usb-{:04x}-{:04x}-b{}a{}",
-                    usb.vid,
-                    usb.pid,
-                    d.bus_number(),
-                    d.device_address()
-                ),
-            };
+            let key = usb_key(usb, serial.as_deref(), d.bus_number(), d.device_address());
             Some(UsbDevice {
                 usb,
                 key,
@@ -207,6 +228,7 @@ pub fn list(records: &Records) -> Vec<UsbDevice> {
                 product,
                 interfaces: d.interfaces().map(|i| i.class()).collect(),
                 usage_pages: Vec::new(),
+                link_mbps: link_mbps(d.speed()),
             })
         })
         .collect();
@@ -357,6 +379,7 @@ mod tests {
             Some(DeviceKind::StreamDeck)
         );
         assert_eq!(k(ELGATO, 0x009c, "Elgato 4K X"), Some(DeviceKind::Capture));
+        assert_eq!(k(ELGATO, 0x009b, "Elgato 4K X"), Some(DeviceKind::Capture));
         assert_eq!(k(ELGATO, 0x0066, "Cam Link 4K"), Some(DeviceKind::Capture));
         assert_eq!(
             k(DISPLAYLINK, 0xff1a, "Elgato Prompter"),
@@ -520,5 +543,41 @@ mod tests {
         assert!(a.starts_with("hid-054c-0ce6-bt-") && a.len() == "hid-054c-0ce6-bt-".len() + 8);
         assert_eq!(a, hid_key(id, None, true, "DevSrvsID:1"));
         assert_ne!(a, hid_key(id, None, true, "DevSrvsID:2"));
+    }
+
+    #[test]
+    fn the_4k_x_is_one_device_in_both_usb_modes() {
+        let r = Records::builtin();
+        for pid in [0x009c, 0x009b] {
+            let rec = r.by_usb(UsbId { vid: ELGATO, pid }).expect("record");
+            assert_eq!(rec.name, "Elgato 4K X");
+            assert_eq!((rec.kind, rec.family), (DeviceKind::Capture, Family::Uvc));
+        }
+        let five = UsbId {
+            vid: ELGATO,
+            pid: 0x009c,
+        };
+        let ten = UsbId {
+            vid: ELGATO,
+            pid: 0x009b,
+        };
+        assert_eq!(
+            usb_key(ten, Some("A1"), 1, 2),
+            usb_key(five, Some("A1"), 3, 4)
+        );
+        assert_eq!(usb_key(ten, Some("A1"), 1, 2), "usb-0fd9-009c-A1");
+        // Other devices keep their own product id.
+        let cam_link = UsbId {
+            vid: ELGATO,
+            pid: 0x0066,
+        };
+        assert_eq!(usb_key(cam_link, None, 1, 2), "usb-0fd9-0066-b1a2");
+    }
+
+    #[test]
+    fn link_speeds_read_as_megabits() {
+        assert_eq!(link_mbps(Some(nusb::Speed::Super)), Some(5_000));
+        assert_eq!(link_mbps(Some(nusb::Speed::SuperPlus)), Some(10_000));
+        assert_eq!(link_mbps(None), None);
     }
 }
