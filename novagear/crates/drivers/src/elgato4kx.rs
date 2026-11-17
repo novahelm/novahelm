@@ -20,8 +20,9 @@
 //! carries a two-byte length.
 //!
 //! Decoded on 2026-11-16 by tracing Elgato Studio 1.1.0 on one card (firmware
-//! `bcdDevice 0x0130`), each direction seen once. Writing is refused unless the card's
-//! reply to the read looks exactly like that card's did.
+//! `bcdDevice 0x0130`), and checked by switching that card both ways with this driver. The
+//! read needs no status poll first (Elgato Studio sends one, command `0x67`). Writing is
+//! refused unless the card's reply to the read looks exactly like that card's did.
 
 use crate::catalog::ELGATO;
 use anyhow::{Context, Result, bail, ensure};
@@ -375,6 +376,18 @@ mod tests {
         );
         let r = mode_reply(0x03);
         assert_eq!(r[..12], hex("a1 80 85 00 01 00 00 00 03 00 00 00")[..]);
+    }
+
+    #[test]
+    fn the_reply_a_real_card_gave_in_10_gbps_mode_parses() {
+        // Read from a 4K X (firmware 0x0130) on 2026-11-16, without a status poll first:
+        // 137 bytes, zero after the mode, checksum 0x56.
+        let mut real = hex("a1 80 85 00 01 00 00 00 03");
+        real.resize(136, 0);
+        real.push(0x56);
+        assert_eq!(parse_reply(&real).unwrap().len(), 133);
+        assert_eq!(parse_usb_mode_reply(&real).unwrap(), UsbSpeedMode::Gbps10);
+        assert_eq!(real, mode_reply(0x03));
     }
 
     #[test]

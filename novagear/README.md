@@ -21,7 +21,7 @@ NovaGear is part of [NovaHelm](../README.md). It is free and open source under t
 | Key Light                 | found by mDNS; on/off, brightness, warmth, identify. Verified live.                                                 |
 | Razer Basilisk V3         | reads and sets DPI, static colour, brightness (interface 3). DPI read verified live.                                |
 | Elgato Prompter           | teleprompter window driven by the agent; Chrome/Edge put it on the Prompter screen with F.                          |
-| Elgato 4K X               | Preview in the panel; shows and switches the USB speed mode (5 or 10 Gbps) without Elgato's apps.                   |
+| Elgato 4K X               | Preview in the panel; shows and switches the USB speed mode (5 or 10 Gbps). Switch verified live (firmware 1.30).  |
 | Cam Link 4K               | listed; Preview in the panel uses the browser's camera API.                                                         |
 | Stream Deck +             | keys, dials, touch strip, bindings. Verified live. Needs the Elgato Stream Deck app quit (it holds it exclusively). |
 | 8BitDo Retro Keyboard     | listed only.                                                                                                        |
@@ -202,8 +202,9 @@ out around 4K30. Elgato keeps that switch in its own apps; NovaGear has it too. 
 - 10 Gbps mode needs a port and cable that can do 10 Gb/s; on a slower one the link stays at 5 Gb/s.
 - Quit Elgato Studio and the Capture Device Utility first, so only one app talks to the card.
 - The commands go through the card's UVC extension unit as plain control requests, so macOS's camera driver keeps the
-  card. They were decoded on one card with firmware 1.30. Before writing, NovaGear reads the mode and refuses to switch
-  unless the card's reply looks exactly like that card's did.
+  card. They were decoded on one card with firmware 1.30, and NovaGear switched that card both ways and read it back.
+  Before writing, NovaGear reads the mode and refuses to switch unless the card's reply looks exactly like that card's
+  did.
 
 ## Device records, logs and firmware
 
