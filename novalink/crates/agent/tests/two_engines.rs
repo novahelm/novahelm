@@ -347,6 +347,9 @@ async fn swap_setting_turns_ctrl_into_cmd_and_releases_on_change() {
 // ---- service channels ----
 
 mod channels {
+    use novalink_agent::api::{
+        encode_hex, new_nonce, server_proof, verify_forwarder_proof, verify_proof,
+    };
     use novalink_agent::channels;
     use novalink_agent::engine::EngineHandle;
     use novalink_agent::testutil::two_engines;
@@ -483,5 +486,134 @@ mod channels {
         let b_id = b.status().me;
         let mut c = connect(fport, &format!("NOVALINK-CONNECT {b_id} compute {TOKEN}\n")).await;
         assert_eq!(line(&mut c).await, "ERR no such service");
+    }
+
+    // ---- the optional hello: the forwarder proves it holds the token first ----
+
+    /// Sends the hello with a fresh nonce and returns the connection, the nonce and the proof.
+    async fn hello(port: u16) -> (TcpStream, [u8; 16], String) {
+        let nonce = new_nonce();
+        let mut c = connect(port, &format!("NOVALINK-HELLO {}\n", encode_hex(&nonce))).await;
+        let answer = line(&mut c).await;
+        let proof = answer.strip_prefix("PROOF ").expect("a proof").to_string();
+        (c, nonce, proof)
+    }
+
+    #[tokio::test]
+    async fn hello_is_answered_with_a_proof_then_connect_works() {
+        let (a, _pa, b, _pb) = two_engines().await;
+        let svc = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        b.services()
+            .set("compute", svc.local_addr().unwrap().port(), "s3cret")
+            .unwrap();
+        let fport = forwarder(&a).await;
+        let (a_id, b_id) = (a.status().me, b.status().me);
+        let (mut c, nonce, proof) = hello(fport).await;
+        assert!(verify_forwarder_proof(TOKEN, &nonce, &proof));
+        assert!(!verify_forwarder_proof("other-token", &nonce, &proof));
+        assert!(!verify_forwarder_proof(TOKEN, &new_nonce(), &proof));
+        // Same connection, the usual connect line.
+        c.write_all(format!("NOVALINK-CONNECT {b_id} compute {TOKEN}\n").as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(line(&mut c).await, "OK");
+        c.write_all(b"ping").await.unwrap();
+        let (mut srv, _) = svc.accept().await.unwrap();
+        assert_eq!(line(&mut srv).await, format!("NOVALINK-FROM {a_id} s3cret"));
+        let mut buf = [0u8; 4];
+        srv.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"ping");
+    }
+
+    /// `/v1/hello` answers anyone, so its proofs must be worthless on this port (and the
+    /// other way round): a program that took one port can't borrow the other's answer.
+    #[tokio::test]
+    async fn forwarder_proof_is_not_the_api_proof() {
+        let (a, _pa, _b, _pb) = two_engines().await;
+        let fport = forwarder(&a).await;
+        let (_c, nonce, proof) = hello(fport).await;
+        assert_ne!(proof, server_proof(TOKEN, &nonce));
+        assert!(!verify_proof(TOKEN, &nonce, &proof));
+        assert!(!verify_forwarder_proof(
+            TOKEN,
+            &nonce,
+            &server_proof(TOKEN, &nonce)
+        ));
+    }
+
+    #[tokio::test]
+    async fn bad_hello_nonce_is_refused() {
+        let (a, _pa, _b, _pb) = two_engines().await;
+        let fport = forwarder(&a).await;
+        for (p, want) in [
+            ("NOVALINK-HELLO zz\n".to_string(), "ERR bad nonce"),
+            ("NOVALINK-HELLO \n".to_string(), "ERR bad nonce"),
+            (
+                format!("NOVALINK-HELLO {}\n", "ab".repeat(15)),
+                "ERR bad nonce",
+            ),
+            (
+                format!("NOVALINK-HELLO {}\n", "ab".repeat(17)),
+                "ERR bad nonce",
+            ),
+            (
+                format!("NOVALINK-HELLO {}g\n", "a".repeat(31)),
+                "ERR bad nonce",
+            ),
+            (
+                format!("NOVALINK-HELLO {} x\n", "ab".repeat(16)),
+                "ERR bad nonce",
+            ),
+            ("NOVALINK-HELLO\n".to_string(), "ERR bad preface"),
+            (
+                format!("NOVALINK-HELLO {}\n", "a".repeat(600)),
+                "ERR bad preface",
+            ),
+        ] {
+            let mut c = connect(fport, &p).await;
+            assert_eq!(line(&mut c).await, want, "{p:.40}");
+            assert_eq!(c.read(&mut [0u8; 1]).await.unwrap(), 0, "socket closes");
+        }
+    }
+
+    #[tokio::test]
+    async fn hello_does_not_replace_the_token() {
+        let (a, _pa, b, _pb) = two_engines().await;
+        let fport = forwarder(&a).await;
+        let b_id = b.status().me;
+        for (after, want) in [
+            (
+                format!("NOVALINK-CONNECT {b_id} compute wrong\n"),
+                "ERR unauthorised",
+            ),
+            (
+                format!("NOVALINK-CONNECT {b_id} compute\n"),
+                "ERR bad preface",
+            ),
+            // Only one hello per connection: no second proof.
+            (
+                format!("NOVALINK-HELLO {}\n", "ab".repeat(16)),
+                "ERR bad preface",
+            ),
+            (format!("{}\n", "x".repeat(600)), "ERR bad preface"),
+        ] {
+            let (mut c, _, _) = hello(fport).await;
+            c.write_all(after.as_bytes()).await.unwrap();
+            assert_eq!(line(&mut c).await, want, "{after:.40}");
+            assert_eq!(c.read(&mut [0u8; 1]).await.unwrap(), 0, "socket closes");
+        }
+    }
+
+    #[tokio::test]
+    async fn slow_preface_after_hello_times_out() {
+        let (a, _pa, _b, _pb) = two_engines().await;
+        let fport = forwarder(&a).await;
+        let started = std::time::Instant::now();
+        let (mut c, _, _) = hello(fport).await;
+        c.write_all(b"NOVALINK-CONN").await.unwrap();
+        let l = tokio::time::timeout(std::time::Duration::from_secs(8), line(&mut c)).await;
+        assert_eq!(l.unwrap(), "ERR bad preface");
+        // The hello does not buy a second 5 s: both lines share one limit.
+        assert!(started.elapsed() < std::time::Duration::from_millis(6500));
     }
 }
