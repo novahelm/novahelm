@@ -50,6 +50,15 @@ enum Cmd {
     Prompter { op: String },
     /// Set the Razer mouse DPI.
     Dpi { dpi: u16 },
+    /// Elgato 4K X: show its USB speed mode, or switch it with `5` or `10`. Switching makes
+    /// the card disconnect and reconnect, so preview and recording from it stop briefly.
+    UsbMode {
+        speed: Option<SpeedArg>,
+        /// Only this card (an id from `novagear devices`); needed when more than one is
+        /// connected.
+        #[arg(long)]
+        id: Option<String>,
+    },
     /// Run any action as JSON, e.g. '{"do":"light_toggle"}'.
     Action { json: String },
     /// Replace the deck's pages with your Elgato Stream Deck profiles (keeps config.json.bak).
@@ -86,6 +95,119 @@ enum ClientOp {
     Remove {
         name: String,
     },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum SpeedArg {
+    #[value(name = "5")]
+    Five,
+    #[value(name = "10")]
+    Ten,
+}
+
+impl SpeedArg {
+    fn mode(self) -> &'static str {
+        match self {
+            SpeedArg::Five => "5gbps",
+            SpeedArg::Ten => "10gbps",
+        }
+    }
+}
+
+/// "10 Gbps" from "10gbps".
+fn mode_label(mode: &str) -> String {
+    mode.strip_suffix("gbps")
+        .map_or_else(|| mode.to_string(), |n| format!("{n} Gbps"))
+}
+
+/// "10 Gbps mode, link 10 Gb/s" for a capture card with a USB mode; empty otherwise.
+fn usb_mode_text(state: &Value) -> String {
+    let Some(mode) = state["usb_mode"].as_str() else {
+        return String::new();
+    };
+    let mut out = format!("{} mode", mode_label(mode));
+    if let Some(l) = state["link_mbps"].as_u64() {
+        out += &format!(", link {} Gb/s", l as f64 / 1000.0);
+    }
+    if let Some(to) = state["usb_mode_switching"].as_str() {
+        out += &format!(", switching to {}", mode_label(to));
+    }
+    out
+}
+
+/// The 4K X cards the agent lists, or only the one with `id`.
+fn usb_mode_cards(id: Option<&str>) -> Result<Vec<Value>> {
+    let devs = call("GET", "/api/devices", None)?;
+    Ok(devs
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|d| d["state"]["usb_mode"].is_string())
+        .filter(|d| id.is_none_or(|i| d["id"] == i))
+        .cloned()
+        .collect())
+}
+
+fn usb_mode(speed: Option<SpeedArg>, id: Option<String>) -> Result<()> {
+    use std::time::{Duration, Instant};
+    let cards = usb_mode_cards(id.as_deref())?;
+    if cards.is_empty() {
+        bail!(match id {
+            Some(_) => "no Elgato 4K X with that id is connected",
+            None => "no Elgato 4K X connected",
+        });
+    }
+    let Some(speed) = speed else {
+        for c in &cards {
+            println!(
+                "{}: {}  [{}]",
+                strip_control(c["name"].as_str().unwrap_or("")),
+                usb_mode_text(&c["state"]),
+                c["id"].as_str().unwrap_or("")
+            );
+            if let Some(e) = c["state"]["usb_mode_error"].as_str() {
+                println!("  last switch failed: {}", strip_control(e));
+            }
+        }
+        return Ok(());
+    };
+    if cards.len() > 1 {
+        bail!("more than one Elgato 4K X is connected; pick one with --id");
+    }
+    let card = &cards[0];
+    let target = speed.mode();
+    if card["state"]["usb_mode"] == target {
+        println!("Already in {} mode.", mode_label(target));
+        return Ok(());
+    }
+    let card_id = card["id"].as_str().unwrap_or("").to_string();
+    println!(
+        "Switching to {} mode. The card disconnects and reconnects; preview and recording \
+         from it stop for a few seconds.",
+        mode_label(target)
+    );
+    action(json!({ "do": "capture_usb_mode", "id": card_id, "mode": target }))?;
+    let until = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(500));
+        let Ok(now) = usb_mode_cards(None) else {
+            continue;
+        };
+        // Same id when the card has a serial; otherwise the only 4K X there is.
+        let found = now
+            .iter()
+            .find(|c| c["id"] == card_id.as_str())
+            .or(if now.len() == 1 { now.first() } else { None });
+        let Some(c) = found else { continue };
+        if let Some(e) = c["state"]["usb_mode_error"].as_str() {
+            bail!("{}", strip_control(e));
+        }
+        if c["state"]["usb_mode"] == target && c["state"]["usb_mode_switching"].is_null() {
+            println!("Back: {}.", usb_mode_text(&c["state"]));
+            return Ok(());
+        }
+    }
+    bail!("the card has not come back yet; check with `novagear usb-mode`")
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -230,6 +352,7 @@ fn print_devices(devs: &Value) {
                 d["state"]["kelvin"]
             ),
             Some("mouse") if d["state"]["dpi"].is_number() => format!("{} dpi", d["state"]["dpi"]),
+            Some("capture") => usb_mode_text(&d["state"]),
             _ => String::new(),
         };
         println!(
@@ -326,6 +449,7 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Open => open_url(&panel_url("")?)?,
+        Cmd::UsbMode { speed, id } => usb_mode(speed, id)?,
         Cmd::Light { op, id } => action(match op {
             LightOp::On => json!({ "do": "light_set", "id": id, "on": true }),
             LightOp::Off => json!({ "do": "light_set", "id": id, "on": false }),
@@ -435,6 +559,19 @@ mod tests {
             "fw 1.0.3 (200) -> 1.0.3 (222) (update available)"
         );
         assert_eq!(firmware_text(&json!({})), "fw -");
+    }
+
+    #[test]
+    fn usb_mode_text_names_the_mode_link_and_switch() {
+        assert_eq!(
+            usb_mode_text(&json!({"usb_mode": "10gbps", "link_mbps": 10000})),
+            "10 Gbps mode, link 10 Gb/s"
+        );
+        assert_eq!(
+            usb_mode_text(&json!({"usb_mode": "5gbps", "usb_mode_switching": "10gbps"})),
+            "5 Gbps mode, switching to 10 Gbps"
+        );
+        assert_eq!(usb_mode_text(&json!({"preview": "browser"})), "");
     }
 
     #[test]

@@ -461,6 +461,7 @@ family = "streamdeck"
             product: "Litra \"Glow\"".into(),
             interfaces: vec![3],
             usage_pages: vec![0xff43],
+            link_mbps: None,
         };
         let draft = draft_record(&u);
         assert!(!draft.contains("SERIAL123"), "{draft}");

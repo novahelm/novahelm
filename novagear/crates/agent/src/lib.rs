@@ -20,9 +20,10 @@ pub mod templates;
 
 use anyhow::{Context, Result, bail};
 use novagear_core::config::Config;
-use novagear_core::{Action, DeviceInfo, DeviceKind, FirmwareInfo, Status, UsbId};
+use novagear_core::{Action, DeviceInfo, DeviceKind, FirmwareInfo, Status, UsbId, UsbSpeedMode};
 use novagear_drivers::catalog::{self, HidDevice, UsbDevice};
 use novagear_drivers::devices::{Family, Record, Records};
+use novagear_drivers::elgato4kx::{self, SetOutcome};
 use novagear_drivers::hotplug::{self, Watch};
 use novagear_drivers::keylight::{self, LightState};
 use novagear_drivers::razer;
@@ -53,6 +54,8 @@ const FALLBACK_SCAN: Duration = Duration::from_secs(2);
 const LIGHT_REFRESH: Duration = Duration::from_secs(20);
 /// Wait before retrying a device that failed to open, so a held device isn't hammered.
 const RETRY: Duration = Duration::from_secs(15);
+/// How long a 4K X has to come back in its new USB mode after a switch.
+const USB_MODE_SWITCH_WAIT: Duration = Duration::from_secs(20);
 /// How long after the last knob-turned setting the config file is written.
 const CONFIG_DEBOUNCE: Duration = Duration::from_secs(1);
 
@@ -145,6 +148,25 @@ struct MouseSlot {
     retry_at: Option<Instant>,
 }
 
+/// The Elgato 4K X's USB mode switch. The mode itself is never stored: the product id the
+/// card shows says it.
+#[derive(Default)]
+struct CaptureSlot {
+    switching: Option<UsbModeSwitch>,
+    /// The last switch's failure, shown until the next switch.
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct UsbModeSwitch {
+    key: String,
+    /// Without a serial the key is bus and address, which change on reconnect, so any 4K
+    /// X that comes back in the new mode counts.
+    has_serial: bool,
+    to: UsbSpeedMode,
+    deadline: Instant,
+}
+
 /// The firmware check's memory: what Elgato last shipped, and when a check last failed.
 #[derive(Default)]
 struct FirmwareState {
@@ -224,6 +246,7 @@ pub struct Agent {
     hid: Mutex<Vec<HidDevice>>,
     deck: Mutex<DeckSlot>,
     mouse: Mutex<MouseSlot>,
+    capture: Mutex<CaptureSlot>,
     prompter: Mutex<PrompterRun>,
     nav: Mutex<modes::ModeState>,
     ui: Mutex<modes::DeckUi>,
@@ -389,6 +412,25 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// What "Copy device details" copies for an unlisted device. No serial and no path.
+/// A capture card's state: Preview for all, and for the 4K X its USB mode (from the product
+/// id it shows), the link speed and any switch in progress.
+fn capture_state(u: &UsbDevice, capture: &CaptureSlot) -> serde_json::Value {
+    let mut v = json!({ "preview": "browser" });
+    if let Some(l) = u.link_mbps {
+        v["link_mbps"] = json!(l);
+    }
+    if let Some(mode) = elgato4kx::mode_of(u.usb) {
+        v["usb_mode"] = json!(mode.as_str());
+        v["usb_mode_switchable"] = json!(true);
+        let switching = capture.switching.as_ref().filter(|s| s.key == u.key);
+        v["usb_mode_switching"] = json!(switching.map(|s| s.to.as_str()));
+        if let Some(e) = &capture.error {
+            v["usb_mode_error"] = json!(e);
+        }
+    }
+    v
+}
+
 fn unknown_details(u: &UsbDevice) -> serde_json::Value {
     json!({
         "vid": format!("{:04x}", u.usb.vid),
@@ -468,6 +510,7 @@ impl Agent {
             hid: Mutex::default(),
             deck: Mutex::default(),
             mouse: Mutex::default(),
+            capture: Mutex::default(),
             prompter: Mutex::default(),
             nav: Mutex::new(nav),
             ui: Mutex::default(),
@@ -1159,6 +1202,7 @@ impl Agent {
         }
         let deck = lock(&self.deck);
         let mouse = lock(&self.mouse);
+        let capture = lock(&self.capture);
         let deck_control = lock(&self.cfg).deck_control;
         for u in lock(&self.usb).iter() {
             let (status, state) = match u.kind {
@@ -1189,7 +1233,7 @@ impl Agent {
                     (None, None) => (Status::Listed, json!({})),
                 },
                 DeviceKind::Prompter => (Status::Ready, json!({ "display": true })),
-                DeviceKind::Capture => (Status::Ready, json!({ "preview": "browser" })),
+                DeviceKind::Capture => (Status::Ready, capture_state(u, &capture)),
                 _ => (Status::Listed, json!({})),
             };
             out.push(DeviceInfo {
@@ -1525,6 +1569,7 @@ impl Agent {
                 let rgb = novagear_drivers::draw::parse_color(&color);
                 self.with_mouse(move |m| m.set_static_color(rgb)).await
             }
+            Action::CaptureUsbMode { id, mode } => self.set_capture_usb_mode(id, mode).await,
             Action::PageGo { page } => self.show_page(page, true),
             Action::PageBack => {
                 let prev = lock(&self.nav).back.pop();
@@ -1741,6 +1786,125 @@ impl Agent {
         .await?
     }
 
+    /// Switches a 4K X's USB speed mode. Returns once the card took it; the reconnect in
+    /// the new mode is watched for by `check_usb_mode_switch`.
+    async fn set_capture_usb_mode(&self, id: Option<String>, mode: UsbSpeedMode) -> Result<()> {
+        let card = {
+            let usb = lock(&self.usb);
+            let mut cards = usb
+                .iter()
+                .filter(|u| elgato4kx::is_4kx(u.usb))
+                .filter(|u| id.as_ref().is_none_or(|i| *i == u.key));
+            let card = cards.next().cloned().context(if id.is_some() {
+                "no Elgato 4K X with that id is connected"
+            } else {
+                "no Elgato 4K X connected"
+            })?;
+            if cards.next().is_some() {
+                bail!("more than one Elgato 4K X is connected; give the id of the one to switch");
+            }
+            card
+        };
+        if elgato4kx::mode_of(card.usb) == Some(mode) {
+            return Ok(());
+        }
+        {
+            // Claimed before the card is touched, so two switches never overlap.
+            let mut slot = lock(&self.capture);
+            if slot.switching.is_some() {
+                bail!("the 4K X is already switching; wait for it to reconnect");
+            }
+            slot.switching = Some(UsbModeSwitch {
+                key: card.key.clone(),
+                has_serial: card.serial.is_some(),
+                to: mode,
+                deadline: Instant::now() + USB_MODE_SWITCH_WAIT,
+            });
+            slot.error = None;
+        }
+        self.devices_changed();
+        let serial = card.serial.clone();
+        let r = tokio::task::spawn_blocking(move || {
+            let (mut ch, opened) = elgato4kx::open(serial.as_deref())?;
+            if opened.device_version != elgato4kx::DECODED_ON {
+                tracing::warn!(
+                    "4K X firmware {:#06x} is not the one the USB mode switch was decoded on; \
+                     going ahead only if its reply looks the same",
+                    opened.device_version
+                );
+            }
+            elgato4kx::set_usb_speed_mode(&mut ch, mode)
+        })
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("switching the 4K X: {e}")));
+        {
+            let mut slot = lock(&self.capture);
+            match &r {
+                Ok(SetOutcome::Switching) => {
+                    tracing::info!("4K X switching to {} mode; it will reconnect", mode.label());
+                    // Restart the wait from the moment the card took it.
+                    if let Some(s) = slot.switching.as_mut() {
+                        s.deadline = Instant::now() + USB_MODE_SWITCH_WAIT;
+                    }
+                }
+                Ok(SetOutcome::Already) => {
+                    // The card already holds that mode but shows the other product id: it
+                    // takes effect when the card next reconnects.
+                    tracing::warn!(
+                        "4K X already set to {} mode but not reconnected in it",
+                        mode.label()
+                    );
+                    slot.switching = None;
+                    slot.error = Some(format!(
+                        "the card is already set to {} mode; unplug and replug it to apply",
+                        mode.label()
+                    ));
+                }
+                Err(e) => {
+                    slot.switching = None;
+                    slot.error = Some(format!("{e:#}"));
+                }
+            }
+        }
+        self.devices_changed();
+        r.map(drop)
+    }
+
+    /// Ends a 4K X switch once the card is back under the new product id, or once the wait
+    /// runs out. Returns whether anything changed.
+    fn check_usb_mode_switch(&self, now: &[UsbDevice]) -> bool {
+        let mut slot = lock(&self.capture);
+        let Some(sw) = slot.switching.clone() else {
+            return false;
+        };
+        let back = now.iter().find(|u| {
+            elgato4kx::mode_of(u.usb) == Some(sw.to) && (u.key == sw.key || !sw.has_serial)
+        });
+        if let Some(u) = back {
+            match u.link_mbps {
+                Some(l) => tracing::info!(
+                    "4K X reconnected in {} mode, link {} Gb/s",
+                    sw.to.label(),
+                    l / 1000
+                ),
+                None => tracing::info!("4K X reconnected in {} mode", sw.to.label()),
+            }
+            slot.switching = None;
+            return true;
+        }
+        if Instant::now() >= sw.deadline {
+            tracing::warn!("4K X did not come back in {} mode", sw.to.label());
+            slot.switching = None;
+            slot.error = Some(format!(
+                "the card did not come back in {} mode within {} s; unplug and replug it",
+                sw.to.label(),
+                USB_MODE_SWITCH_WAIT.as_secs()
+            ));
+            return true;
+        }
+        false
+    }
+
     async fn set_mouse_dpi(&self, dpi: u16) -> Result<()> {
         let r = self
             .with_mouse(move |m| m.set_dpi(dpi).and_then(|_| m.dpi()))
@@ -1955,6 +2119,9 @@ impl Agent {
             }
         }
         self.maybe_read_mouse(razer_pid).await;
+        if self.check_usb_mode_switch(now) {
+            self.devices_changed();
+        }
     }
 
     /// The soonest time a failed deck open or mouse read is due for another try.
@@ -1965,7 +2132,9 @@ impl Agent {
         let m = (mouse.pid.is_some() && mouse.dpi.is_none())
             .then_some(mouse.retry_at)
             .flatten();
-        d.into_iter().chain(m).min()
+        // A 4K X switch that hasn't seen the card come back gives up at its deadline.
+        let c = lock(&self.capture).switching.as_ref().map(|s| s.deadline);
+        d.into_iter().chain(m).chain(c).min()
     }
 
     async fn retry_devices(self: &Arc<Self>, input_tx: &DeckInputs) {
@@ -2645,6 +2814,7 @@ mod tests {
             product: String::new(),
             interfaces: Vec::new(),
             usage_pages: Vec::new(),
+            link_mbps: None,
         }
     }
 
@@ -3368,6 +3538,95 @@ mod tests {
                 .unwrap()
                 .update_available
         );
+    }
+
+    fn four_k_x(pid: u16, serial: &str, link: u32) -> UsbDevice {
+        let mut u = usb_dev(0x0fd9, pid, Some(serial), DeviceKind::Capture, Family::Uvc);
+        u.key = catalog::usb_key(u.usb, Some(serial), 1, 2);
+        u.link_mbps = Some(link);
+        u
+    }
+
+    #[test]
+    fn the_4k_x_shows_its_usb_mode_from_the_product_id() {
+        let agent = test_agent("4kx-state");
+        *lock(&agent.usb) = vec![four_k_x(0x009b, "A1", 10_000)];
+        let d = agent.devices().into_iter().next().unwrap();
+        assert_eq!(d.state["usb_mode"], "10gbps");
+        assert_eq!(d.state["link_mbps"], 10_000);
+        assert_eq!(d.state["usb_mode_switchable"], true);
+        assert!(d.state["usb_mode_switching"].is_null());
+        assert_eq!(d.state["preview"], "browser");
+        *lock(&agent.usb) = vec![four_k_x(0x009c, "A1", 5_000)];
+        let d = agent.devices().into_iter().next().unwrap();
+        assert_eq!(d.state["usb_mode"], "5gbps");
+        // A capture card that isn't a 4K X has no USB mode.
+        let cam = usb_dev(0x0fd9, 0x0066, None, DeviceKind::Capture, Family::Uvc);
+        *lock(&agent.usb) = vec![cam];
+        let d = agent.devices().into_iter().next().unwrap();
+        assert!(d.state.get("usb_mode").is_none());
+    }
+
+    #[tokio::test]
+    async fn switching_needs_a_4k_x_and_is_a_no_op_in_the_current_mode() {
+        let agent = test_agent("4kx-switch");
+        let to = |mode| Action::CaptureUsbMode { id: None, mode };
+        let e = agent.run(to(UsbSpeedMode::Gbps5)).await.unwrap_err();
+        assert!(format!("{e:#}").contains("no Elgato 4K X"), "{e:#}");
+        // Already in 10 Gbps mode by its product id: nothing is sent to the card.
+        *lock(&agent.usb) = vec![four_k_x(0x009b, "A1", 10_000)];
+        agent.run(to(UsbSpeedMode::Gbps10)).await.unwrap();
+        assert!(lock(&agent.capture).switching.is_none());
+        *lock(&agent.usb) = vec![
+            four_k_x(0x009b, "A1", 10_000),
+            four_k_x(0x009b, "B2", 10_000),
+        ];
+        let e = agent.run(to(UsbSpeedMode::Gbps5)).await.unwrap_err();
+        assert!(format!("{e:#}").contains("more than one"), "{e:#}");
+    }
+
+    #[tokio::test]
+    async fn a_switch_ends_when_the_card_is_back_under_the_other_product_id() {
+        let agent = test_agent("4kx-reconnect");
+        let before = four_k_x(0x009b, "A1", 10_000);
+        lock(&agent.capture).switching = Some(UsbModeSwitch {
+            key: before.key.clone(),
+            has_serial: true,
+            to: UsbSpeedMode::Gbps5,
+            deadline: Instant::now() + USB_MODE_SWITCH_WAIT,
+        });
+        *lock(&agent.usb) = vec![before.clone()];
+        let d = agent.devices().into_iter().next().unwrap();
+        assert_eq!(d.state["usb_mode_switching"], "5gbps");
+        // Still the old identity, then gone: still waiting.
+        assert!(!agent.check_usb_mode_switch(&[before]));
+        assert!(!agent.check_usb_mode_switch(&[]));
+        // Another 4K X in the new mode is not this one.
+        assert!(!agent.check_usb_mode_switch(&[four_k_x(0x009c, "B2", 5_000)]));
+        let after = four_k_x(0x009c, "A1", 5_000);
+        assert!(agent.check_usb_mode_switch(&[after]));
+        let slot = lock(&agent.capture);
+        assert!(slot.switching.is_none() && slot.error.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_switch_that_never_comes_back_says_so() {
+        let agent = test_agent("4kx-timeout");
+        lock(&agent.capture).switching = Some(UsbModeSwitch {
+            key: "usb-0fd9-009c-A1".into(),
+            has_serial: true,
+            to: UsbSpeedMode::Gbps10,
+            deadline: Instant::now() + USB_MODE_SWITCH_WAIT,
+        });
+        assert_eq!(
+            agent.next_retry(),
+            Some(lock(&agent.capture).switching.as_ref().unwrap().deadline)
+        );
+        tokio::time::advance(USB_MODE_SWITCH_WAIT).await;
+        assert!(agent.check_usb_mode_switch(&[]));
+        let slot = lock(&agent.capture);
+        assert!(slot.switching.is_none());
+        assert!(slot.error.as_deref().unwrap().contains("did not come back"));
     }
 
     #[test]

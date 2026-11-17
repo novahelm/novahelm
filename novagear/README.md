@@ -21,7 +21,8 @@ NovaGear is part of [NovaHelm](../README.md). It is free and open source under t
 | Key Light                 | found by mDNS; on/off, brightness, warmth, identify. Verified live.                                                 |
 | Razer Basilisk V3         | reads and sets DPI, static colour, brightness (interface 3). DPI read verified live.                                |
 | Elgato Prompter           | teleprompter window driven by the agent; Chrome/Edge put it on the Prompter screen with F.                          |
-| Elgato 4K X / Cam Link 4K | listed; Preview in the panel uses the browser's camera API.                                                         |
+| Elgato 4K X               | Preview in the panel; shows and switches the USB speed mode (5 or 10 Gbps). Switch verified live (firmware 1.30).  |
+| Cam Link 4K               | listed; Preview in the panel uses the browser's camera API.                                                         |
 | Stream Deck +             | keys, dials, touch strip, bindings. Verified live. Needs the Elgato Stream Deck app quit (it holds it exclusively). |
 | 8BitDo Retro Keyboard     | listed only.                                                                                                        |
 
@@ -65,7 +66,7 @@ Either front end starts `novagear-agent` if none is running and stops it on Quit
 running. Both have "Open NovaGear panel", start at login, and live state from the agent's event stream.
 
 CLI examples: `novagear light toggle`, `novagear light set --brightness 40 --kelvin 4800`, `novagear prompter play`,
-`novagear dpi 1600`, `novagear action '{"do":"light_kelvin_step","step":-200}'`.
+`novagear dpi 1600`, `novagear usb-mode 10`, `novagear action '{"do":"light_kelvin_step","step":-200}'`.
 
 ## What it does
 
@@ -186,6 +187,25 @@ refused) returns a picture the deck can draw, found the way the deck finds it: y
 the bundled set (`lucide%2Fhand.svg`). It is sent with `nosniff` and a `sandbox` CSP, and the panel shows it from a blob
 URL fetched with its Authorization header, so no token is ever part of an image URL.
 
+### Elgato 4K X USB speed mode
+
+On a Mac the 4K X connects at 5 Gb/s until its "10 Gbps mode" is switched on, and at 5 Gb/s uncompressed capture tops
+out around 4K30. Elgato keeps that switch in its own apps; NovaGear has it too. The panel's Capture section and
+`novagear usb-mode` show the mode and the negotiated link speed, and `novagear usb-mode 5` or `novagear usb-mode 10`
+(or the panel's buttons, or `{"do": "capture_usb_mode", "mode": "10gbps"}`) switch it.
+
+- The card stores the mode and shows a different USB identity in each: `0fd9:009c` in 5 Gbps mode, `0fd9:009b` in
+  10 Gbps mode. NovaGear lists both as the same card, with the same id, and reads the mode from the identity, so
+  showing it sends nothing to the card.
+- Switching makes the card disconnect and reconnect a few seconds later, so preview and recording from it stop
+  briefly. The agent waits up to 20 seconds for it to come back in the new mode and says so if it doesn't.
+- 10 Gbps mode needs a port and cable that can do 10 Gb/s; on a slower one the link stays at 5 Gb/s.
+- Quit Elgato Studio and the Capture Device Utility first, so only one app talks to the card.
+- The commands go through the card's UVC extension unit as plain control requests, so macOS's camera driver keeps the
+  card. They were decoded on one card with firmware 1.30, and NovaGear switched that card both ways and read it back.
+  Before writing, NovaGear reads the mode and refuses to switch unless the card's reply looks exactly like that card's
+  did.
+
 ## Device records, logs and firmware
 
 Every device the agent lists comes from a record: a vendor, a model, how to recognise it (USB vid:pid) and which driver
@@ -206,7 +226,8 @@ Elgato's public update feed (turn it off with "Check for firmware updates" in th
 ## Layout
 
 - `crates/core`: device types, actions, bindings, config (`~/Library/Application Support/NovaGear/config.json`).
-- `crates/drivers`: `keylight`, `streamdeck`, `razer`, `catalog` (USB listing), `draw` (key images).
+- `crates/drivers`: `keylight`, `streamdeck`, `razer`, `elgato4kx` (the 4K X's USB mode), `catalog` (USB listing),
+  `draw` (key images).
 - `crates/agent`: `novagear-agent`, the local API on `127.0.0.1:47820` and on the 0600 socket `agent.sock` (token in the config dir) and the panel pages in
   `panel/`.
 - `crates/cli`: `novagear`.

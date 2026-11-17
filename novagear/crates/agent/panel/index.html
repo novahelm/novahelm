@@ -908,9 +908,34 @@
         const caps = devices.filter(d => d.kind === 'capture');
         const box = $('capList');
         if (!caps.length) { box.className = 'muted'; box.textContent = 'No capture cards found.'; return; }
-        box.className = ''; box.replaceChildren(...caps.map(c => el('div', { className: 'row' },
+        box.className = ''; box.replaceChildren(...caps.flatMap(c => [el('div', { className: 'row' },
           el('span', { className: 'name', textContent: c.name }),
-          el('button', { textContent: 'Preview', onclick: () => startPreview(c.name) }))));
+          el('button', { textContent: 'Preview', onclick: () => startPreview(c.name) })), ...usbModeRows(c)]));
+      }
+
+      // The Elgato 4K X's USB speed mode. The mode comes from the USB identity the card shows,
+      // so it is always current; switching stores it on the card, which then reconnects.
+      const MODE_LABEL = { '5gbps': '5 Gbps', '10gbps': '10 Gbps' };
+      function usbModeRows(c) {
+        const s = c.state || {};
+        if (!s.usb_mode_switchable) return [];
+        const link = s.link_mbps ? `, link ${s.link_mbps / 1000} Gb/s` : '';
+        const now = s.usb_mode_switching ? `Reconnecting in ${MODE_LABEL[s.usb_mode_switching]} mode…` : `${MODE_LABEL[s.usb_mode] || s.usb_mode}${link}`;
+        const rows = [el('div', { className: 'row' },
+          el('label', { textContent: 'USB mode' }),
+          el('span', { className: 'name', textContent: now }),
+          ...['5gbps', '10gbps'].map(m => el('button', {
+            className: s.usb_mode === m ? 'on' : '', textContent: MODE_LABEL[m],
+            disabled: !!s.usb_mode_switching || s.usb_mode === m,
+            onclick: () => switchUsbMode(c, m),
+          })))];
+        rows.push(el('div', { className: 'muted', textContent: s.usb_mode_error ? `Last switch failed: ${s.usb_mode_error}` : 'Switching makes the card disconnect and reconnect, which stops preview and recording from it for a few seconds. 10 Gbps mode needs a 10 Gb/s port and cable.' }));
+        return rows;
+      }
+      function switchUsbMode(c, mode) {
+        if (!confirm(`Switch ${c.name} to ${MODE_LABEL[mode]} mode?\n\nThe card disconnects and reconnects in the new mode. Preview and any recording from it stop for a few seconds.`)) return;
+        if (previewing) { previewing.getTracks().forEach(t => t.stop()); previewing = null; $('preview').style.display = 'none'; }
+        act({ do: 'capture_usb_mode', id: c.id, mode });
       }
 
       const copyText = async (text, done) => {

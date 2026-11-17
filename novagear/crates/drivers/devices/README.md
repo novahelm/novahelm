@@ -86,10 +86,17 @@ icon, the group the device is listed in and which panel controls can apply.
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `keylight`    | Elgato lights on the Key Light HTTP API: on/off, brightness, warmth, firmware check. The record names the board.                                 |
 | `razer90`     | Razer mice on the 90-byte feature-report protocol: DPI, static colour, brightness. Needs `quirks.interface` and usually `quirks.transaction_id`. |
-| `uvc`         | Capture cards and webcams: listed, with Preview in the panel.                                                                                    |
+| `uvc`         | Capture cards and webcams: listed, with Preview in the panel. The Elgato 4K X also gets its USB speed mode switch (see below).                   |
 | `streamdeck`  | Listed. Only the Stream Deck + is driven today; other layouts need driver work.                                                                  |
 | `displaylink` | The Elgato Prompter's screen.                                                                                                                    |
 | `hid`, `none` | Listed with the right name and kind, not controlled.                                                                                             |
+
+### A device with two USB identities
+
+The Elgato 4K X shows `0fd9:009c` in 5 Gbps mode and `0fd9:009b` in 10 Gbps mode, so it has a record for each, with the
+same name. The USB mode switch itself is driver code (`crates/drivers/src/elgato4kx.rs`), not a record setting: the
+records only make NovaGear recognise the card in both modes. NovaGear gives both identities one device id, so the card
+keeps its id when it switches.
 
 ### Finding a Razer mouse's `quirks`
 

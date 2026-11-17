@@ -76,6 +76,33 @@ pub struct FirmwareInfo {
     pub source: Option<String>,
 }
 
+/// A capture card's USB speed mode (the Elgato 4K X's "10 Gbps mode" switch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum UsbSpeedMode {
+    #[serde(rename = "5gbps")]
+    Gbps5,
+    #[serde(rename = "10gbps")]
+    Gbps10,
+}
+
+impl UsbSpeedMode {
+    /// The name the API uses: "5gbps" or "10gbps".
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UsbSpeedMode::Gbps5 => "5gbps",
+            UsbSpeedMode::Gbps10 => "10gbps",
+        }
+    }
+
+    /// "5 Gbps" or "10 Gbps", for people.
+    pub fn label(self) -> &'static str {
+        match self {
+            UsbSpeedMode::Gbps5 => "5 Gbps",
+            UsbSpeedMode::Gbps10 => "10 Gbps",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UsbId {
     pub vid: u16,
@@ -127,6 +154,13 @@ pub enum Action {
     /// `#rrggbb`, static colour on every LED.
     MouseColor {
         color: String,
+    },
+    /// Switches the Elgato 4K X's USB speed mode. The card stores it, drops off the bus and
+    /// reconnects in the new mode a few seconds later. Without an `id`, the one 4K X.
+    CaptureUsbMode {
+        #[serde(default)]
+        id: Option<String>,
+        mode: UsbSpeedMode,
     },
     DeckBrightnessStep {
         step: i16,
@@ -309,6 +343,7 @@ impl Action {
             Action::MouseDpi { .. } => "mouse_dpi",
             Action::MouseDpiStep { .. } => "mouse_dpi_step",
             Action::MouseColor { .. } => "mouse_color",
+            Action::CaptureUsbMode { .. } => "capture_usb_mode",
             Action::DeckBrightnessStep { .. } => "deck_brightness_step",
             Action::PageGo { .. } => "page_go",
             Action::PageBack => "page_back",
@@ -391,6 +426,23 @@ mod tests {
             serde_json::from_str::<DeviceKind>("\"controller\"").unwrap(),
             DeviceKind::Controller
         );
+    }
+
+    #[test]
+    fn capture_usb_mode_reads_from_json() {
+        let a: Action =
+            serde_json::from_str(r#"{"do":"capture_usb_mode","mode":"10gbps"}"#).unwrap();
+        assert_eq!(
+            a,
+            Action::CaptureUsbMode {
+                id: None,
+                mode: UsbSpeedMode::Gbps10
+            }
+        );
+        assert!(
+            serde_json::from_str::<Action>(r#"{"do":"capture_usb_mode","mode":"20gbps"}"#).is_err()
+        );
+        assert_eq!(a.log_label(), "capture_usb_mode");
     }
 
     #[test]

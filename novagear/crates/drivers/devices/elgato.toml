@@ -104,9 +104,20 @@ kind = "capture"
 family = "uvc"
 firmware = { policy = "vendor_tool", tool = "Elgato 4K Capture Utility", url = "https://www.elgato.com/downloads" }
 
+# The 4K X has two USB identities: 009c in 5 Gbps mode (the default on a Mac) and 009b in
+# 10 Gbps mode. NovaGear treats them as one card and can switch between them; seen on
+# real hardware (firmware bcdDevice 0x0130).
 # unconfirmed: firmware tool/URL not verified
 [[device]]
 usb = "0fd9:009c"
+name = "Elgato 4K X"
+kind = "capture"
+family = "uvc"
+firmware = { policy = "vendor_tool", tool = "Elgato 4K Capture Utility", url = "https://www.elgato.com/downloads" }
+
+# unconfirmed: firmware tool/URL not verified
+[[device]]
+usb = "0fd9:009b"
 name = "Elgato 4K X"
 kind = "capture"
 family = "uvc"
