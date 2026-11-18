@@ -33,37 +33,55 @@ final class FakeAgent: @unchecked Sendable {
         var seen: [SeenRequest] = []
         var connections = 0
         var held: [Int32] = []
+        var stopped = false
     }
 
     let port: UInt16
-    private let listener: Int32
     private let log = Log()
 
     var base: URL { URL(string: "http://127.0.0.1:\(port)")! }
     var seen: [SeenRequest] { log.lock.withLock { log.seen } }
     var connections: Int { log.lock.withLock { log.connections } }
 
-    init(_ handler: @escaping @Sendable (SeenRequest) -> Reply) {
-        let l = socket(AF_INET, SOCK_STREAM, 0)
-        var addr = sockaddr_in()
-        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+    /// A socket bound to a free loopback port, and that port.
+    private static func bound() -> (fd: Int32, port: UInt16) {
+        let s = socket(AF_INET, SOCK_STREAM, 0)
+        var addr = loopback(0)
         var len = socklen_t(MemoryLayout<sockaddr_in>.size)
         _ = withUnsafeMutablePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { p -> Int32 in
-                _ = bind(l, p, len)
-                return getsockname(l, p, &len)
+                _ = bind(s, p, len)
+                return getsockname(s, p, &len)
             }
         }
+        return (s, UInt16(bigEndian: addr.sin_port))
+    }
+
+    private static func loopback(_ port: UInt16) -> sockaddr_in {
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return addr
+    }
+
+    init(_ handler: @escaping @Sendable (SeenRequest) -> Reply) {
+        let (l, port) = Self.bound()
         listen(l, 16)
-        listener = l
-        port = UInt16(bigEndian: addr.sin_port)
+        self.port = port
         let log = self.log
+        // The accept thread owns the listener and is the only one to close it. Closing it from
+        // elsewhere would free its descriptor number while the thread still accepts on it, and the
+        // next fake agent to get that number would have its connections answered by this handler.
         Thread.detachNewThread {
             while true {
                 let c = accept(l, nil, nil)
-                guard c >= 0 else { return }
+                if c < 0 || log.lock.withLock({ log.stopped }) {
+                    if c >= 0 { close(c) }
+                    close(l)
+                    return
+                }
                 var one: Int32 = 1
                 setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
                 log.lock.withLock { log.connections += 1 }
@@ -89,12 +107,24 @@ final class FakeAgent: @unchecked Sendable {
     }
 
     deinit {
-        close(listener)
-        for c in log.held { close(c) }
+        // Wake the accept thread with one last connection so it sees `stopped` and closes up.
+        let held = log.lock.withLock { log.stopped = true; return log.held }
+        let s = socket(AF_INET, SOCK_STREAM, 0)
+        var addr = Self.loopback(port)
+        _ = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(s, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        close(s)
+        for c in held { close(c) }
     }
 
-    /// A loopback port nothing listens on.
-    static func deadPort() -> UInt16 { FakeAgent { _ in Reply() }.port }
+    /// A loopback port nothing listens on: bound, noted, closed, never listened on. (A port that
+    /// stays bound without listening is no use here: macOS lets a connection to it time out.)
+    static func deadPort() -> UInt16 {
+        let (s, port) = bound()
+        close(s)
+        return port
+    }
 
     private static func write(_ c: Int32, _ text: String) {
         let bytes = Array(text.utf8)
@@ -177,7 +207,8 @@ private func goodAgent(status code: Int = 200, body: String = "{}") -> FakeAgent
 
 private func authed(_ agent: FakeAgent) -> [SeenRequest] { agent.seen.filter { $0.headers["authorization"] != nil } }
 
-@Suite struct APIClientTests {
+/// One at a time: `notRunning` needs its closed port to stay unused until it has connected.
+@Suite(.serialized) struct APIClientTests {
     @Test func statusDecodesAgentJSON() throws {
         let s = try JSONDecoder().decode(AgentStatus.self, from: Data(statusJSON.utf8))
         #expect(s.peers[0].rttUs == 412 && s.peers[0].dryInject == false)
