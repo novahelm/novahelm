@@ -204,38 +204,64 @@ fn pending_discovered_and_check_decode_agent_shapes() {
     assert!(!c.ok && c.advice == "Fix it.");
 }
 
+/// What a fake agent saw: every request that wasn't a hello, and how many connections came in.
+#[derive(Default)]
+struct Seen {
+    requests: String,
+    connections: usize,
+}
+
+/// Reads one request head from `conn`; `None` once the client has hung up.
+fn read_head(conn: &mut std::net::TcpStream) -> Option<String> {
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        if conn.read(&mut byte).unwrap_or(0) == 0 {
+            return None;
+        }
+        head.push(byte[0]);
+    }
+    Some(String::from_utf8_lossy(&head).to_string())
+}
+
 /// Fake agent: answers the first `good` hellos correctly, later ones wrongly; records
-/// every other request.
-fn fake_agent(good: usize) -> (String, Arc<Mutex<String>>) {
+/// every other request. Like the real agent it keeps a connection open between requests,
+/// unless `hangs_up_after_hello`.
+fn fake_agent(good: usize, hangs_up_after_hello: bool) -> (String, Arc<Mutex<Seen>>) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let seen = Arc::new(Mutex::new(String::new()));
+    let seen = Arc::new(Mutex::new(Seen::default()));
     let s2 = seen.clone();
     std::thread::spawn(move || {
         let mut hellos = 0;
         for conn in l.incoming() {
             let mut conn = conn.unwrap();
-            let mut buf = [0u8; 4096];
-            let n = conn.read(&mut buf).unwrap_or(0);
-            let req = String::from_utf8_lossy(&buf[..n]).to_string();
-            let body = if let Some(rest) = req.split("nonce=").nth(1) {
-                hellos += 1;
-                let hex: String = rest.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
-                let proof = if hellos <= good {
-                    server_proof("tok", &decode_hex(&hex).unwrap())
+            s2.lock().unwrap().connections += 1;
+            while let Some(req) = read_head(&mut conn) {
+                let hello = req.split("nonce=").nth(1);
+                let body = if let Some(rest) = hello {
+                    hellos += 1;
+                    let hex: String = rest.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+                    let proof = if hellos <= good {
+                        server_proof("tok", &decode_hex(&hex).unwrap())
+                    } else {
+                        "00".into()
+                    };
+                    json!({ "proof": proof }).to_string()
                 } else {
-                    "00".into()
+                    s2.lock().unwrap().requests.push_str(&req);
+                    "{}".to_string()
                 };
-                json!({ "proof": proof }).to_string()
-            } else {
-                s2.lock().unwrap().push_str(&req);
-                "{}".to_string()
-            };
-            let _ = write!(
-                conn,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
+                let _ = write!(
+                    conn,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                let asked_to_close = req.to_ascii_lowercase().contains("connection: close");
+                if asked_to_close || (hello.is_some() && hangs_up_after_hello) {
+                    break;
+                }
+            }
         }
     });
     (base, seen)
@@ -243,15 +269,41 @@ fn fake_agent(good: usize) -> (String, Arc<Mutex<String>>) {
 
 #[test]
 fn proof_is_checked_on_every_request() {
-    let (base, seen) = fake_agent(1);
+    let (base, seen) = fake_agent(1, false);
     let c = Client::with(&base, "tok".into());
     c.metrics().unwrap();
-    let first = seen.lock().unwrap().to_ascii_lowercase();
+    let first = seen.lock().unwrap().requests.to_ascii_lowercase();
     assert!(first.contains("authorization"));
-    seen.lock().unwrap().clear();
+    seen.lock().unwrap().requests.clear();
     // The port's owner changed: the second request must fail the proof and send no token.
     assert!(matches!(c.metrics(), Err(ClientError::Impostor)));
-    assert!(seen.lock().unwrap().is_empty());
+    assert!(seen.lock().unwrap().requests.is_empty());
+}
+
+/// The token goes to the listener that proved itself, so on the connection the proof came
+/// back on. A second connection could be answered by whoever holds the port by then.
+#[test]
+fn token_rides_the_connection_that_proved_itself() {
+    let (base, seen) = fake_agent(1, false);
+    let c = Client::with(&base, "tok".into());
+    c.metrics().unwrap();
+    let seen = seen.lock().unwrap();
+    assert!(seen.requests.contains("Bearer tok"));
+    assert_eq!(seen.connections, 1);
+}
+
+#[test]
+fn token_is_not_sent_on_a_second_connection() {
+    // Proves itself, then hangs up: the client must not dial again to deliver the token.
+    let (base, seen) = fake_agent(usize::MAX, true);
+    let c = Client::with(&base, "tok".into());
+    match c.metrics() {
+        Err(ClientError::Other(m)) => assert!(m.contains("closed the connection"), "{m}"),
+        other => panic!("{other:?}"),
+    }
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.connections, 1);
+    assert!(seen.requests.is_empty());
 }
 
 #[test]

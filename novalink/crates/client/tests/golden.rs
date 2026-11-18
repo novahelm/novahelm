@@ -6,12 +6,12 @@
 //! To refresh after an API change: `NOVALINK_UPDATE_FIXTURES=1 cargo test -p novalink-client
 //! --features novalink-agent/fake --test golden`.
 
+use http::Method;
 use novalink_agent::api::router;
 use novalink_agent::engine::EngineHandle;
 use novalink_agent::testutil::{one_engine, two_engines, wait_until};
 use novalink_client::Client;
 use novalink_net::discovery::Discovered;
-use reqwest::Method;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
