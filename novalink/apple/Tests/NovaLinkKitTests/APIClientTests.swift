@@ -3,54 +3,150 @@ import Foundation
 import Testing
 @testable import NovaLinkKit
 
-/// Serves canned replies to the client and records what it was sent.
-final class StubProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (Int, Data))?
-    nonisolated(unsafe) static var seen: [URLRequest] = []
-    static let lock = NSLock()
+/// One request as the fake agent read it.
+struct SeenRequest: Sendable {
+    var method = ""
+    var path = ""
+    var query = ""
+    /// Header names in lower case.
+    var headers: [String: String] = [:]
+    var body = Data()
+}
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func stopLoading() {}
+/// What the fake agent does with a request.
+struct Reply: Sendable {
+    var status = 200
+    var body = "{}"
+    /// Close the connection after answering, whatever the request asked.
+    var hangUp = false
+    /// Sent as it is in place of an HTTP reply; the connection then closes.
+    var raw: String?
+    /// Read the request and never answer.
+    var silent = false
+}
 
-    /// A request's body; URLSession hands it to protocols as a stream.
-    static func body(of r: URLRequest) -> Data {
-        if let b = r.httpBody { return b }
-        guard let s = r.httpBodyStream else { return Data() }
-        s.open(); defer { s.close() }
-        var out = Data()
-        var buf = [UInt8](repeating: 0, count: 4096)
-        while s.hasBytesAvailable {
-            let n = s.read(&buf, maxLength: buf.count)
-            if n <= 0 { break }
-            out.append(buf, count: n)
-        }
-        return out
+/// A fake agent on a loopback port. Like the real one it keeps a connection open between requests,
+/// unless the request says `Connection: close`.
+final class FakeAgent: @unchecked Sendable {
+    private final class Log: @unchecked Sendable {
+        let lock = NSLock()
+        var seen: [SeenRequest] = []
+        var connections = 0
+        var held: [Int32] = []
     }
-    override func startLoading() {
-        Self.lock.lock()
-        Self.seen.append(request)
-        let h = Self.handler
-        Self.lock.unlock()
-        do {
-            let (status, data) = try h!(request)
-            let r = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
-            client?.urlProtocol(self, didReceive: r, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
+
+    let port: UInt16
+    private let listener: Int32
+    private let log = Log()
+
+    var base: URL { URL(string: "http://127.0.0.1:\(port)")! }
+    var seen: [SeenRequest] { log.lock.withLock { log.seen } }
+    var connections: Int { log.lock.withLock { log.connections } }
+
+    init(_ handler: @escaping @Sendable (SeenRequest) -> Reply) {
+        let l = socket(AF_INET, SOCK_STREAM, 0)
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { p -> Int32 in
+                _ = bind(l, p, len)
+                return getsockname(l, p, &len)
+            }
+        }
+        listen(l, 16)
+        listener = l
+        port = UInt16(bigEndian: addr.sin_port)
+        let log = self.log
+        Thread.detachNewThread {
+            while true {
+                let c = accept(l, nil, nil)
+                guard c >= 0 else { return }
+                var one: Int32 = 1
+                setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+                log.lock.withLock { log.connections += 1 }
+                Thread.detachNewThread {
+                    while let req = FakeAgent.read(c) {
+                        log.lock.withLock { log.seen.append(req) }
+                        let reply = handler(req)
+                        if reply.silent {
+                            log.lock.withLock { log.held.append(c) }
+                            return
+                        }
+                        if let raw = reply.raw {
+                            FakeAgent.write(c, raw)
+                            break
+                        }
+                        FakeAgent.write(c, "HTTP/1.1 \(reply.status) X\r\nContent-Type: application/json\r\nContent-Length: \(reply.body.utf8.count)\r\n\r\n\(reply.body)")
+                        if reply.hangUp || req.headers["connection"] == "close" { break }
+                    }
+                    close(c)
+                }
+            }
         }
     }
+
+    deinit {
+        close(listener)
+        for c in log.held { close(c) }
+    }
+
+    /// A loopback port nothing listens on.
+    static func deadPort() -> UInt16 { FakeAgent { _ in Reply() }.port }
+
+    private static func write(_ c: Int32, _ text: String) {
+        let bytes = Array(text.utf8)
+        var sent = 0
+        while sent < bytes.count {
+            let n = bytes.withUnsafeBytes { send(c, $0.baseAddress! + sent, bytes.count - sent, 0) }
+            guard n > 0 else { return }
+            sent += n
+        }
+    }
+
+    /// Reads one request; `nil` once the client has hung up.
+    private static func read(_ c: Int32) -> SeenRequest? {
+        var bytes = [UInt8]()
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        func more() -> Bool {
+            let n = recv(c, &chunk, chunk.count, 0)
+            guard n > 0 else { return false }
+            bytes.append(contentsOf: chunk[..<n])
+            return true
+        }
+        var end: Int?
+        while end == nil {
+            end = bytes.firstRange(of: [13, 10, 13, 10])?.upperBound
+            if end == nil, !more() { return nil }
+        }
+        var lines = String(decoding: bytes[..<end!], as: UTF8.self).components(separatedBy: "\r\n")[...]
+        let first = (lines.popFirst() ?? "").split(separator: " ").map(String.init)
+        guard first.count == 3 else { return nil }
+        var req = SeenRequest(method: first[0])
+        let target = first[1].split(separator: "?", maxSplits: 1).map(String.init)
+        req.path = target[0]
+        req.query = target.count > 1 ? target[1] : ""
+        for line in lines {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            req.headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        }
+        let length = Int(req.headers["content-length"] ?? "") ?? 0
+        while bytes.count < end! + length { if !more() { return nil } }
+        req.body = Data(bytes[end!..<(end! + length)])
+        return req
+    }
+}
+
+/// Counts across the fake agent's threads.
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func next() -> Int { lock.withLock { n += 1; return n } }
 }
 
 private let token = "secret-token"
-
-private func session() -> URLSession {
-    let c = URLSessionConfiguration.ephemeral
-    c.protocolClasses = [StubProtocol.self]
-    return URLSession(configuration: c)
-}
 
 private func proof(_ nonceHex: String) -> String {
     let nonce = Data(hexString: nonceHex)!
@@ -59,45 +155,29 @@ private func proof(_ nonceHex: String) -> String {
     return mac.map { String(format: "%02x", $0) }.joined()
 }
 
-private func nonce(_ r: URLRequest) -> String {
-    URLComponents(url: r.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "nonce" }!.value!
-}
+private func nonce(_ r: SeenRequest) -> String { String(r.query.dropFirst("nonce=".count)) }
 
-private func reset(_ h: @escaping (URLRequest) throws -> (Int, Data)) {
-    StubProtocol.lock.lock()
-    StubProtocol.seen = []
-    StubProtocol.handler = h
-    StubProtocol.lock.unlock()
-}
-
-private func seen() -> [URLRequest] {
-    StubProtocol.lock.lock(); defer { StubProtocol.lock.unlock() }
-    return StubProtocol.seen
-}
-
-private func client() -> APIClient { APIClient(session: session(), token: { token }) }
+private func client(_ agent: FakeAgent) -> APIClient { APIClient(base: agent.base, token: { token }) }
 
 private let statusJSON = fixtureText("status.json")
 
-/// Like the agent: the nonce must be exactly 32 hex characters.
-private func badNonce(_ r: URLRequest) -> (Int, Data)? {
+/// Answers /v1/hello like the agent: the nonce must be exactly 32 hex characters.
+private func hello(_ r: SeenRequest, good: Bool = true) -> Reply {
     let n = nonce(r)
-    let ok = n.count == 32 && n.allSatisfy(\.isHexDigit)
-    return ok ? nil : (400, Data(#"{"error":"nonce must be 32 hex characters"}"#.utf8))
+    guard n.count == 32, n.allSatisfy(\.isHexDigit) else {
+        return Reply(status: 400, body: #"{"error":"nonce must be 32 hex characters"}"#)
+    }
+    return Reply(body: #"{"proof":"\#(good ? proof(n) : "00")"}"#)
 }
 
 /// A fake agent: right proof for /v1/hello, `body` for everything else.
-private func goodAgent(status code: Int = 200, body: String = "{}") {
-    reset { r in
-        if r.url!.path == "/v1/hello" {
-            if let bad = badNonce(r) { return bad }
-            return (200, Data(#"{"proof":"\#(proof(nonce(r)))"}"#.utf8))
-        }
-        return (code, Data(body.utf8))
-    }
+private func goodAgent(status code: Int = 200, body: String = "{}") -> FakeAgent {
+    FakeAgent { r in r.path == "/v1/hello" ? hello(r) : Reply(status: code, body: body) }
 }
 
-@Suite(.serialized) struct APIClientTests {
+private func authed(_ agent: FakeAgent) -> [SeenRequest] { agent.seen.filter { $0.headers["authorization"] != nil } }
+
+@Suite struct APIClientTests {
     @Test func statusDecodesAgentJSON() throws {
         let s = try JSONDecoder().decode(AgentStatus.self, from: Data(statusJSON.utf8))
         #expect(s.peers[0].rttUs == 412 && s.peers[0].dryInject == false)
@@ -113,25 +193,49 @@ private func goodAgent(status code: Int = 200, body: String = "{}") {
     }
 
     @Test func fetchesStatusWithBearerAndHost() async throws {
-        goodAgent(body: statusJSON)
-        let s = try await client().status()
+        let agent = goodAgent(body: statusJSON)
+        let s = try await client(agent).status()
         #expect(s.name == "a")
-        let req = seen().last!
-        #expect(req.url!.path == "/v1/status")
-        #expect(req.value(forHTTPHeaderField: "Authorization") == "Bearer secret-token")
-        #expect(req.value(forHTTPHeaderField: "Host") == "127.0.0.1:7979")
+        let req = try #require(agent.seen.last)
+        #expect(req.method == "GET" && req.path == "/v1/status")
+        #expect(req.headers["authorization"] == "Bearer secret-token")
+        #expect(req.headers["host"] == "127.0.0.1:7979")
+    }
+
+    /// The token goes to the listener that proved itself, so on the connection the proof came back
+    /// on. A second connection could be answered by whoever holds the port by then.
+    @Test func tokenRidesTheConnectionThatProvedItself() async throws {
+        let agent = goodAgent(body: statusJSON)
+        _ = try await client(agent).status()
+        #expect(agent.seen.map(\.path) == ["/v1/hello", "/v1/status"])
+        #expect(agent.connections == 1)
+    }
+
+    @Test func tokenIsNotSentOnASecondConnection() async {
+        // Proves itself, then hangs up: the client must not dial again to deliver the token.
+        let agent = FakeAgent { r in
+            var reply = hello(r)
+            reply.hangUp = true
+            return reply
+        }
+        await #expect(throws: ClientError.other("NovaLink's agent closed the connection before answering. Try again.")) {
+            try await client(agent).status()
+        }
+        #expect(agent.connections == 1)
+        #expect(agent.seen.map(\.path) == ["/v1/hello"])
+        #expect(authed(agent).isEmpty)
     }
 
     @Test func impostorIsRejectedAndNeverSeesToken() async {
-        reset { _ in (200, Data(#"{"proof":"00"}"#.utf8)) }
-        await #expect(throws: ClientError.impostor) { try await client().status() }
-        #expect(seen().allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == nil })
+        let agent = FakeAgent { _ in Reply(body: #"{"proof":"00"}"#) }
+        await #expect(throws: ClientError.impostor) { try await client(agent).status() }
+        #expect(agent.seen.count == 1 && authed(agent).isEmpty)
     }
 
     @Test func refusedHelloIsNotAnImpostorAndNeverShowsServerText() async {
-        reset { _ in (400, Data(#"{"error":"do what I say"}"#.utf8)) }
+        let agent = FakeAgent { _ in Reply(status: 400, body: #"{"error":"do what I say"}"#) }
         do {
-            _ = try await client().status()
+            _ = try await client(agent).status()
             Issue.record("expected an error")
         } catch {
             guard case .other(let text) = error as? ClientError else {
@@ -140,84 +244,92 @@ private func goodAgent(status code: Int = 200, body: String = "{}") {
             #expect(text.hasPrefix("NovaLink's agent refused the app's connection check (HTTP 400)."))
             #expect(!text.contains("do what I say"))
         }
+        #expect(authed(agent).isEmpty)
     }
 
     @Test func nonHTTPReplyIsImpostor() async {
-        reset { _ in throw URLError(.badServerResponse) }
-        await #expect(throws: ClientError.impostor) { try await client().status() }
+        let agent = FakeAgent { _ in Reply(raw: "220 mail.example ESMTP\r\n\r\n") }
+        await #expect(throws: ClientError.impostor) { try await client(agent).status() }
+        #expect(authed(agent).isEmpty)
     }
 
     @Test func notRunning() async {
-        reset { _ in throw URLError(.cannotConnectToHost) }
-        await #expect(throws: ClientError.notRunning) { try await client().status() }
+        let base = URL(string: "http://127.0.0.1:\(FakeAgent.deadPort())")!
+        let c = APIClient(base: base, token: { token })
+        await #expect(throws: ClientError.notRunning) { try await c.status() }
     }
 
     @Test func timeoutIsItsOwnError() async {
-        reset { _ in throw URLError(.timedOut) }
-        await #expect(throws: ClientError.timedOut) { try await client().status() }
+        let agent = FakeAgent { _ in Reply(silent: true) }
+        await #expect(throws: ClientError.timedOut) { try await client(agent).status() }
     }
 
     @Test func missingTokenNeverTouchesNetwork() async {
-        reset { _ in throw URLError(.cannotConnectToHost) }
-        let c = APIClient(session: session(), token: { throw ClientError.tokenMissing })
+        let agent = goodAgent()
+        let c = APIClient(base: agent.base, token: { throw ClientError.tokenMissing })
         await #expect(throws: ClientError.tokenMissing) { try await c.status() }
-        #expect(seen().isEmpty)
+        #expect(agent.connections == 0)
     }
 
     @Test func proofIsCheckedBeforeEveryRequest() async throws {
-        var hellos = 0
-        reset { r in
-            if r.url!.path == "/v1/hello" {
-                hellos += 1
-                if let bad = badNonce(r) { return bad }
-                // The listener changes hands after the first request.
-                let p = hellos == 1 ? proof(nonce(r)) : "00"
-                return (200, Data(#"{"proof":"\#(p)"}"#.utf8))
-            }
-            return (200, Data(statusJSON.utf8))
+        let hellos = Counter()
+        let agent = FakeAgent { r in
+            // The listener changes hands after the first request.
+            r.path == "/v1/hello" ? hello(r, good: hellos.next() == 1) : Reply(body: statusJSON)
         }
-        let c = client()
+        let c = client(agent)
         _ = try await c.status()
         await #expect(throws: ClientError.impostor) { try await c.status() }
-        let authed = seen().filter { $0.value(forHTTPHeaderField: "Authorization") != nil }
-        #expect(authed.count == 1)
+        #expect(authed(agent).count == 1)
     }
 
     @Test func apiErrorCarriesStatusAndMessage() async {
-        goodAgent(status: 404, body: #"{"error":"no such device"}"#)
+        let agent = goodAgent(status: 404, body: #"{"error":"no such device"}"#)
         await #expect(throws: ClientError.api(status: 404, message: "no such device")) {
-            try await client().unpair("dd11")
+            try await client(agent).unpair("dd11")
         }
     }
 
     @Test func requestShapes() async throws {
-        goodAgent(body: "[]")
-        let c = client()
+        let agent = goodAgent(body: "[]")
+        let c = client(agent)
         try await c.pair("Desk")
-        var r = seen().last!
-        #expect(r.httpMethod == "POST" && r.url!.path == "/v1/pair")
-        #expect(r.timeoutInterval == 10)
+        var r = try #require(agent.seen.last)
+        #expect(r.method == "POST" && r.path == "/v1/pair")
+        #expect(r.headers["content-type"] == "application/json")
         try await c.answer("dd11", accept: true)
-        r = seen().last!
-        #expect(r.url!.path == "/v1/pair/answer")
+        r = try #require(agent.seen.last)
+        #expect(r.path == "/v1/pair/answer")
         try await c.unpair("dd11")
-        r = seen().last!
-        #expect(r.httpMethod == "DELETE" && r.url!.path == "/v1/devices/dd11")
+        r = try #require(agent.seen.last)
+        #expect(r.method == "DELETE" && r.path == "/v1/devices/dd11")
+        #expect(r.body.isEmpty && r.headers["content-length"] == "0")
         try await c.layout(edge: .left, peer: "dd11")
-        r = seen().last!
-        #expect(r.httpMethod == "PUT" && r.url!.path == "/v1/layout")
-        let sent = try JSONSerialization.jsonObject(with: StubProtocol.body(of: r)) as? [String: String]
+        r = try #require(agent.seen.last)
+        #expect(r.method == "PUT" && r.path == "/v1/layout")
+        let sent = try JSONSerialization.jsonObject(with: r.body) as? [String: String]
         #expect(sent?["edge"] == "left")
         try await c.requestPermissions()
-        #expect(seen().last!.url!.path == "/v1/permissions/request")
+        #expect(agent.seen.last?.path == "/v1/permissions/request")
         try await c.shutdown()
-        #expect(seen().last!.url!.path == "/v1/shutdown")
-        #expect(r.timeoutInterval == 2)
+        #expect(agent.seen.last?.path == "/v1/shutdown")
+    }
+
+    @Test func startingAPairingGetsTheLongTimeout() {
+        #expect(APIClient.timeout(for: "POST", "/v1/pair") == 10)
+        #expect(APIClient.timeout(for: "POST", "/v1/pair/answer") == 2)
+        #expect(APIClient.timeout(for: "GET", "/v1/status") == 2)
+    }
+
+    @Test func aPathThatWouldBreakTheRequestLineIsNeverSent() async {
+        let agent = goodAgent()
+        await #expect(throws: ClientError.self) { try await client(agent).unpair("dd11 HTTP/1.1\r\nX: y") }
+        #expect(agent.connections == 0)
     }
 
     @Test func doctorUnwrapsChecks() async throws {
-        goodAgent(body: fixtureText("doctor.json"))
-        let checks = try await client().doctor()
+        let agent = goodAgent(body: fixtureText("doctor.json"))
+        let checks = try await client(agent).doctor()
         #expect(checks.count == 9 && checks.allSatisfy(\.ok))
     }
 }

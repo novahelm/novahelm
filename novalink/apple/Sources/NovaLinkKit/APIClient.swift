@@ -40,67 +40,64 @@ extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
 }
 
-/// Talks to the local agent. The token is only sent after the listener proves it knows it.
+/// Talks to the local agent. The token is only sent after the listener proves it knows it, and
+/// only on the connection the proof came back on.
 public actor APIClient {
     private static let host = "127.0.0.1:7979"
     private static let timeout: TimeInterval = 2
+    /// The agent is on this Mac, so a connection opens in milliseconds or not at all.
+    private static let connectTimeout: TimeInterval = 0.75
     /// Pairing waits for the session to come up, and each dead address costs a dial timeout.
     private static let pairTimeout: TimeInterval = 10
 
-    private let base: URL
-    private let session: URLSession
+    /// `nil` when the base address made no sense; every request then fails as not running.
+    private let address: Address?
     private let token: @Sendable () throws -> String
+
+    struct Address: Sendable {
+        var host: String
+        var port: UInt16
+    }
 
     public init(
         base: URL = URL(string: "http://127.0.0.1:7979")!,
-        session: URLSession = APIClient.makeSession(),
         token: @escaping @Sendable () throws -> String
     ) {
-        self.base = base
-        self.session = session
+        address = base.host.flatMap { host in
+            base.port.flatMap(UInt16.init(exactly:)).map { Address(host: host, port: $0) }
+        }
         self.token = token
     }
 
-    /// No cache, cookies or redirects: the token must never be sent anywhere but the first URL.
-    public static func makeSession() -> URLSession {
-        let c = URLSessionConfiguration.ephemeral
-        c.urlCache = nil
-        c.httpCookieStorage = nil
-        c.httpShouldSetCookies = false
-        c.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: c, delegate: NoRedirects(), delegateQueue: nil)
+    /// How long a request may take. Starting a pairing waits for the session to come up.
+    static func timeout(for method: String, _ path: String) -> TimeInterval {
+        method == "POST" && path == "/v1/pair" ? pairTimeout : timeout
     }
 
     // MARK: Proof
 
     /// Checked before every authenticated request: a long-lived client must not trust a port
-    /// whose owner may have changed.
-    private func prove(_ token: String) async throws {
+    /// whose owner may have changed. The token follows on `conn`, and only on `conn`.
+    private static func prove(_ token: String, on conn: AgentConnection) throws {
         // The agent requires exactly 16 bytes (32 hex characters).
         var nonce = Data(count: 16)
         for i in nonce.indices { nonce[i] = UInt8.random(in: .min ... .max) }
-        var comps = URLComponents(url: base.appendingPathComponent("v1/hello"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [URLQueryItem(name: "nonce", value: nonce.hex)]
-        var req = URLRequest(url: comps.url!, timeoutInterval: Self.timeout)
-        req.setValue(Self.host, forHTTPHeaderField: "Host")
-        let (data, response): (Data, URLResponse)
+        let head = "GET /v1/hello?nonce=\(nonce.hex) HTTP/1.1\r\nHost: \(host)\r\nAccept: application/json\r\n\r\n"
+        let reply: (status: Int, body: Data)
         do {
-            (data, response) = try await session.data(for: req)
-        } catch let e as URLError {
-            switch e.code {
-            case .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet: throw ClientError.notRunning
-            case .timedOut: throw ClientError.timedOut
+            reply = try conn.exchange(head, untilClose: false, deadline: Date() + timeout)
+        } catch AgentConnection.Failure.timedOut {
+            throw ClientError.timedOut
+        } catch {
             // Not speaking HTTP is as good as no proof.
-            default: throw ClientError.impostor
-            }
+            throw ClientError.impostor
         }
-        guard let http = response as? HTTPURLResponse else { throw ClientError.impostor }
         // The listener hasn't proven itself yet, so none of its text may reach the UI.
-        guard (200..<300).contains(http.statusCode) else {
+        guard (200..<300).contains(reply.status) else {
             throw ClientError.other(
-                "NovaLink's agent refused the app's connection check (HTTP \(http.statusCode)). Make sure the app and NovaLink are the same version — reinstall NovaLink if needed.")
+                "NovaLink's agent refused the app's connection check (HTTP \(reply.status)). Make sure the app and NovaLink are the same version — reinstall NovaLink if needed.")
         }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let obj = try? JSONSerialization.jsonObject(with: reply.body) as? [String: Any],
               let proofHex = obj["proof"] as? String,
               let bytes = Data(hexString: proofHex),
               HMAC<SHA256>.isValidAuthenticationCode(
@@ -111,34 +108,62 @@ public actor APIClient {
 
     // MARK: Requests
 
-    private func request(_ method: String, _ path: String, body: [String: Any]? = nil,
-                         timeout: TimeInterval = APIClient.timeout) async throws -> Data {
+    private func request(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Data {
         let token = try self.token()
-        try await prove(token)
-        var req = URLRequest(url: URL(string: base.absoluteString.trimmingSuffix("/") + path)!, timeoutInterval: timeout)
-        req.httpMethod = method
-        req.setValue(Self.host, forHTTPHeaderField: "Host")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if let body {
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload = try body.map { try JSONSerialization.data(withJSONObject: $0) } ?? Data()
+        guard let address else { throw ClientError.notRunning }
+        // The request line and headers are written by hand, so nothing in them may break a line.
+        guard Self.fitsOnALine(path), Self.fitsOnALine(token) else {
+            throw ClientError.other("NovaLink can't send that request: it has characters a request can't carry.")
         }
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch let e as URLError {
-            switch e.code {
-            case .cannotConnectToHost: throw ClientError.notRunning
-            case .timedOut: throw ClientError.timedOut
-            default: throw ClientError.other(e.localizedDescription)
+        let timeout = Self.timeout(for: method, path)
+        // The socket calls block, so they run off the actor and off Swift's own threads.
+        return try await withCheckedThrowingContinuation { (done: CheckedContinuation<Data, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                done.resume(with: Result {
+                    try Self.send(method, path, payload, token: token, to: address, timeout: timeout)
+                })
             }
         }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else {
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            throw ClientError.api(status: status, message: obj?["error"] as? String ?? "request failed")
+    }
+
+    /// Visible ASCII with no spaces: safe in a request line or a header value.
+    private static func fitsOnALine(_ s: String) -> Bool {
+        !s.isEmpty && s.utf8.allSatisfy { $0 > 0x20 && $0 < 0x7f }
+    }
+
+    /// One connection: the proof, then the request with the token.
+    private static func send(_ method: String, _ path: String, _ payload: Data, token: String,
+                             to address: Address, timeout: TimeInterval) throws -> Data {
+        let conn: AgentConnection
+        do {
+            conn = try AgentConnection(host: address.host, port: address.port, timeout: connectTimeout)
+        } catch AgentConnection.Failure.timedOut {
+            throw ClientError.timedOut
+        } catch {
+            throw ClientError.notRunning
         }
-        return data
+        try prove(token, on: conn)
+        var head = "\(method) \(path) HTTP/1.1\r\nHost: \(host)\r\nAuthorization: Bearer \(token)\r\n"
+            + "Accept: application/json\r\nConnection: close\r\nContent-Length: \(payload.count)\r\n"
+        if !payload.isEmpty { head += "Content-Type: application/json\r\n" }
+        head += "\r\n"
+        let reply: (status: Int, body: Data)
+        do {
+            reply = try conn.exchange(head, body: payload, untilClose: true, deadline: Date() + timeout)
+        } catch AgentConnection.Failure.timedOut {
+            throw ClientError.timedOut
+        } catch AgentConnection.Failure.closed {
+            // No second connection: whoever answers a new one hasn't proved anything.
+            throw ClientError.other("NovaLink's agent closed the connection before answering. Try again.")
+        } catch {
+            throw ClientError.other("NovaLink's agent sent a reply the app couldn't read.")
+        }
+        guard (200..<300).contains(reply.status) else {
+            let obj = try? JSONSerialization.jsonObject(with: reply.body) as? [String: Any]
+            throw ClientError.api(status: reply.status, message: obj?["error"] as? String ?? "request failed")
+        }
+        return reply.body
     }
 
     private func typed<T: Decodable>(_ data: Data) throws -> T {
@@ -158,7 +183,7 @@ public actor APIClient {
 
     /// Starts pairing with a discovered device, by name or id.
     public func pair(_ target: String) async throws {
-        _ = try await request("POST", "/v1/pair", body: ["name": target], timeout: Self.pairTimeout)
+        _ = try await request("POST", "/v1/pair", body: ["name": target])
     }
 
     public func answer(_ id: String, accept: Bool) async throws {
@@ -177,14 +202,4 @@ public actor APIClient {
 
     public func requestPermissions() async throws { _ = try await request("POST", "/v1/permissions/request") }
     public func shutdown() async throws { _ = try await request("POST", "/v1/shutdown") }
-}
-
-private extension String {
-    func trimmingSuffix(_ s: String) -> String { hasSuffix(s) ? String(dropLast(s.count)) : self }
-}
-
-private final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest) async -> URLRequest? { nil }
 }
