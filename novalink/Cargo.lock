@@ -1451,10 +1451,10 @@ name = "novalink-client"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "http",
  "novalink-agent",
  "novalink-net",
  "novalink-proto",
- "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
