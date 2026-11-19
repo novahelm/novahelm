@@ -15,6 +15,14 @@ public enum AgentState: Equatable, Sendable {
         }
     }
 
+    /// Whether the agent is registered but will never start by itself, so the app should register
+    /// it afresh. Replacing the app leaves macOS saying `.enabled` while launchd still holds the old
+    /// agent's code hash and refuses to start the new one; nothing listens until it is registered again.
+    /// `error` is what the last status request ended with, nil if the agent answered.
+    public static func isStuck(_ state: AgentState, error: ClientError?) -> Bool {
+        state == .enabled && error == .notRunning
+    }
+
     /// Whether `app` carries the LaunchAgent plist and the agent it starts.
     public static func helperPresent(in app: URL) -> Bool {
         let contents = app.appendingPathComponent("Contents")

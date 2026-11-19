@@ -32,3 +32,16 @@ import Testing
     try Data().write(to: agent)
     #expect(AgentState.helperPresent(in: app))
 }
+
+@Test func onlyAnEnabledAgentWithNothingListeningIsStuck() {
+    #expect(AgentState.isStuck(.enabled, error: .notRunning))
+    // Answering, or failing some other way, is not what registering afresh fixes.
+    #expect(!AgentState.isStuck(.enabled, error: nil))
+    #expect(!AgentState.isStuck(.enabled, error: .impostor))
+    #expect(!AgentState.isStuck(.enabled, error: .tokenMissing))
+    #expect(!AgentState.isStuck(.enabled, error: .timedOut))
+    // Turned off on purpose, waiting for approval, or incomplete: the menu already says what to do.
+    #expect(!AgentState.isStuck(.notRegistered, error: .notRunning))
+    #expect(!AgentState.isStuck(.requiresApproval, error: .notRunning))
+    #expect(!AgentState.isStuck(.notFound, error: .notRunning))
+}
