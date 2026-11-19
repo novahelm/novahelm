@@ -32,5 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.show()
             }
         }
+        Task { await store.repairIfStuck() }
     }
 }

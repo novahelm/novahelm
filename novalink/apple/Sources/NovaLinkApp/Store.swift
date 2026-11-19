@@ -145,6 +145,21 @@ final class Store {
         banner = Banner(text: MenuText.agentNotAnswering, isError: true)
     }
 
+    /// Registers the agent afresh when macOS says it is on but it stays silent, which is how an
+    /// app that was replaced in place ends up. Called once at launch; the wait covers an agent
+    /// that is only slow to start, such as at login.
+    func repairIfStuck() async {
+        for _ in 0..<30 {
+            await refresh()
+            // No answer and no error means the first poll is still out; keep waiting for it.
+            if status != nil || agent.state != .enabled { return }
+            if let e = connectionError, e != .notRunning { return }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        guard AgentState.isStuck(agent.state, error: connectionError) else { return }
+        await turnOn()
+    }
+
     func turnOff() async {
         if let problem = await agent.turnOff(using: client) {
             banner = Banner(text: problem, isError: true)
