@@ -138,10 +138,11 @@ async fn main() -> Result<()> {
         wake_deadline: Duration::from_secs(20),
         wake_gap: Duration::from_secs(5),
         // The Mac wakes this PC by its wired MAC; the Mac side has nothing to advertise.
+        // Read on each connect, so a cable plugged in later is still advertised.
         #[cfg(windows)]
-        advertise_macs: novalink_agent::winnet::wired_macs(),
+        advertise_macs: Arc::new(novalink_agent::winnet::wired_macs),
         #[cfg(not(windows))]
-        advertise_macs: vec![],
+        advertise_macs: Arc::new(Vec::new),
     };
     let engine = Engine::start(real_platform()?, cfg, opts).await?;
     tracing::info!(id = %engine.status().me, "running");

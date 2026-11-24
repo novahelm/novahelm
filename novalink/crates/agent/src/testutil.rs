@@ -52,7 +52,7 @@ fn opts(dir: &std::path::Path, dry_inject: bool) -> EngineOpts {
         waker: Arc::new(FakeWaker::default()),
         wake_deadline: Duration::from_secs(2),
         wake_gap: Duration::from_millis(500),
-        advertise_macs: vec![],
+        advertise_macs: Arc::new(Vec::new),
     }
 }
 
@@ -319,7 +319,7 @@ impl WakePair {
             cfg(id, "b", trust),
             timings(),
             EngineOpts {
-                advertise_macs: vec![B_MAC],
+                advertise_macs: Arc::new(|| vec![B_MAC]),
                 ..opts(&self.dir, false)
             },
         )

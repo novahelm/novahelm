@@ -83,9 +83,13 @@ pub struct EngineOpts {
     pub wake_deadline: Duration,
     /// Minimum time between wake bursts for one peer.
     pub wake_gap: Duration,
-    /// This machine's wired MACs, sent to peers as `WakeInfo` on every connect.
-    pub advertise_macs: Vec<[u8; 6]>,
+    /// Reads this machine's wired MACs, sent to peers as `WakeInfo` on every connect. A
+    /// provider, not a list, so a cable plugged in after start-up is still advertised.
+    pub advertise_macs: AdvertiseMacs,
 }
+
+/// Supplies this machine's wired MAC addresses when asked.
+pub type AdvertiseMacs = Arc<dyn Fn() -> Vec<[u8; 6]> + Send + Sync>;
 
 /// Wake addresses kept per peer; the message itself has no cap.
 const MAX_WAKE_MACS: usize = 8;
@@ -198,7 +202,7 @@ struct Core {
     connected_at: HashMap<DeviceId, Instant>,
     waker: Arc<dyn Waker>,
     wake: WakeTracker,
-    advertise_macs: Vec<[u8; 6]>,
+    advertise_macs: AdvertiseMacs,
 }
 
 /// How long after a `Leave` the held set is checked again.
@@ -615,8 +619,8 @@ impl Core {
             };
             self.to(peer, c);
         }
-        if !self.advertise_macs.is_empty() {
-            let macs = self.advertise_macs.clone();
+        let macs = (self.advertise_macs)();
+        if !macs.is_empty() {
             self.to(peer, Control::WakeInfo { macs });
         }
         // The pointer may still be pushing against the edge of a peer we woke.

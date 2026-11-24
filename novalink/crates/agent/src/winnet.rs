@@ -342,8 +342,8 @@ mod wired {
                     "Get-NetAdapterPowerManagement -Name '{alias}' | Select -Expand WakeOnMagicPacket"
                 ),
             ],
-        );
-        let wake_armed = run_hidden("powercfg.exe", &["/devicequery", "wake_armed"]);
+        )?;
+        let wake_armed = run_hidden("powercfg.exe", &["/devicequery", "wake_armed"])?;
         Some(WakeFacts {
             adapter: w.alias,
             description: w.description,
@@ -352,9 +352,9 @@ mod wired {
         })
     }
 
-    /// Runs a program with no window and returns its output, or "" if it fails or takes
-    /// longer than [`COMMAND_LIMIT`] (the child is then killed).
-    fn run_hidden(program: &str, args: &[&str]) -> String {
+    /// Runs a program with no window and returns its output, or `None` if it can't start,
+    /// exits with an error or takes longer than [`COMMAND_LIMIT`] (the child is then killed).
+    fn run_hidden(program: &str, args: &[&str]) -> Option<String> {
         let Ok(mut child) = Command::new(program)
             .args(args)
             .creation_flags(CREATE_NO_WINDOW)
@@ -363,7 +363,7 @@ mod wired {
             .stderr(Stdio::null())
             .spawn()
         else {
-            return String::new();
+            return None;
         };
         let mut stdout = child.stdout.take();
         let reader = std::thread::spawn(move || {
@@ -389,11 +389,7 @@ mod wired {
         };
         // Killing the child closes its pipe, so the reader always ends.
         let bytes = reader.join().unwrap_or_default();
-        if finished {
-            String::from_utf8_lossy(&bytes).into_owned()
-        } else {
-            String::new()
-        }
+        finished.then(|| String::from_utf8_lossy(&bytes).into_owned())
     }
 }
 
