@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+/// How often the pointer is looked at, while it is here and while it is away.
 pub const SAMPLE_EVERY: Duration = Duration::from_millis(250);
 /// Hide/show changes logged per visit before the log goes quiet, so an app that flickers
 /// the pointer can't flood it.
@@ -65,9 +66,48 @@ impl Watch {
     }
 }
 
+/// While the pointer is on another machine: notes, once, when the cursor here goes from
+/// shown to hidden, since nothing here should be moving or typing then.
+pub struct Away {
+    left_ms: u64,
+    /// Already hidden, or already reported.
+    done: bool,
+}
+
+impl Away {
+    /// The pointer left at `now_ms` with the cursor's `flags` then.
+    pub fn new(now_ms: u64, flags: u32) -> Self {
+        Self {
+            left_ms: now_ms,
+            done: flags & CURSOR_SHOWING == 0,
+        }
+    }
+
+    /// Milliseconds after leaving that the cursor went hidden, the first time it does.
+    pub fn sample(&mut self, now_ms: u64, flags: u32) -> Option<u64> {
+        if self.done || flags & CURSOR_SHOWING != 0 {
+            return None;
+        }
+        self.done = true;
+        Some(now_ms.saturating_sub(self.left_ms))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn away_reports_the_first_hide_after_leaving_once() {
+        let mut a = Away::new(1000, CURSOR_SHOWING);
+        assert_eq!(a.sample(2000, CURSOR_SHOWING), None);
+        assert_eq!(a.sample(9000, 0), Some(8000));
+        assert_eq!(a.sample(10000, 0), None);
+        assert_eq!(a.sample(11000, CURSOR_SHOWING), None);
+        assert_eq!(a.sample(12000, 0), None);
+        // Hidden already when it left: nothing new to report.
+        assert_eq!(Away::new(0, 0).sample(5000, 0), None);
+    }
 
     #[test]
     fn notes_each_hide_and_show_with_the_moves_in_between() {
