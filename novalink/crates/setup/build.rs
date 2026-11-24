@@ -30,7 +30,7 @@ fn main() {
     let mut code = String::new();
     for (name, file) in FILES {
         let Some(dir) = dir.as_ref().filter(|_| windows) else {
-            code += &format!("pub const {name}: &[u8] = &[];\n");
+            code += &format!("pub static {name}: &[u8] = &[];\n");
             continue;
         };
         let path = dir.join(file);
@@ -42,7 +42,7 @@ fn main() {
         }
         println!("cargo:rerun-if-changed={}", path.display());
         code += &format!(
-            "pub const {name}: &[u8] = include_bytes!({:?});\n",
+            "pub static {name}: &[u8] = include_bytes!({:?});\n",
             path.display().to_string()
         );
     }
