@@ -27,9 +27,18 @@ mod tests {
     #[test]
     fn helper_follows_console_session() {
         assert_eq!(helper_action(Some(1), None, false), HelperAction::Start(1));
-        assert_eq!(helper_action(Some(1), Some(1), false), HelperAction::Nothing);
-        assert_eq!(helper_action(Some(2), Some(1), false), HelperAction::Restart(2));
-        assert_eq!(helper_action(Some(1), Some(1), true), HelperAction::Restart(1));
+        assert_eq!(
+            helper_action(Some(1), Some(1), false),
+            HelperAction::Nothing
+        );
+        assert_eq!(
+            helper_action(Some(2), Some(1), false),
+            HelperAction::Restart(2)
+        );
+        assert_eq!(
+            helper_action(Some(1), Some(1), true),
+            HelperAction::Restart(1)
+        );
         assert_eq!(helper_action(None, Some(1), false), HelperAction::Stop);
         assert_eq!(helper_action(None, None, false), HelperAction::Nothing);
     }
