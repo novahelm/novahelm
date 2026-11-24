@@ -648,7 +648,7 @@ fn installed_text() -> String {
     let mut text = "NovaLink is installed. Look for its icon in the tray (you may need to click ^ \
                     to see it)."
         .to_string();
-    let facts = install_dir().and_then(|d| winnet::probe(&d.join(AGENT_EXE)));
+    let facts = install_dir().and_then(|d| winnet::probe(&running_agent_exe(&d)));
     if let Ok(f) = facts {
         let public = winnet::public_networks(&f);
         if !public.is_empty() {
@@ -659,10 +659,16 @@ fn installed_text() -> String {
     text
 }
 
+/// The agent exe NovaLink runs: the Program Files one once the service is installed and up
+/// to date, else the per-user copy.
+fn running_agent_exe(dir: &Path) -> PathBuf {
+    securecheck::program_files_agent_in_use(VERSION).unwrap_or_else(|| dir.join(AGENT_EXE))
+}
+
 /// Asks to let the agent through Windows Firewall when nothing does yet, then adds the rule
 /// with one administrator prompt. Declining, or a failure, leaves the install standing.
 fn allow_firewall(dir: &Path) {
-    let exe = dir.join(AGENT_EXE);
+    let exe = running_agent_exe(dir);
     let state = winnet::probe(&exe).map(|f| winnet::firewall(&f));
     if matches!(state, Ok(Firewall::Allowed | Firewall::Off)) || !ask(firewall::ASK) {
         return;
@@ -820,8 +826,14 @@ fn protected_screens_only() {
             return Ok(());
         }
         stop_tray(&dir)?;
-        stop_agent(&current)?;
-        let installed = install_protected_screens();
+        // The tray comes back on every path from here on.
+        let installed = match stop_agent(&current) {
+            Ok(()) => install_protected_screens(),
+            Err(why) => {
+                let _ = launch_tray(&dir);
+                return Err(why);
+            }
+        };
         launch_tray(&dir)?;
         if installed {
             info("NovaLink now works on the lock and PIN screens.");

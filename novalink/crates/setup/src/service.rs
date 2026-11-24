@@ -35,7 +35,7 @@ pub fn up_to_date(
 }
 
 fn quote(s: &str) -> String {
-    s.replace('\'', "''")
+    firewall::ps_quote(s)
 }
 
 /// Stops the service (waiting until it is stopped) and then ends any NovaLink program still
@@ -71,6 +71,8 @@ pub fn install_script(
     let mut s = String::from("$ErrorActionPreference = 'Stop'\n");
     s += &format!("$src = '{}'\n", quote(payload_dir));
     s += STOP_AND_CLEAR;
+    // A repair that fails part way must not leave the old version.txt saying it finished.
+    s += "Remove-Item -LiteralPath (Join-Path $pf 'version.txt') -Force -ErrorAction SilentlyContinue\n";
     s += &format!(
         "$bin = '\"' + (Join-Path $pf '{SERVICE_EXE}') + '\"'\n\
          New-Item -ItemType Directory -Force -Path $pf | Out-Null\n\
@@ -157,6 +159,33 @@ mod tests {
     }
 
     #[test]
+    fn install_script_doubles_curly_quotes_too() {
+        let s = install_script("C:\\Users\\O\u{2019}Neil\\Temp", "1", SVC, AGENT);
+        assert!(
+            s.contains("$src = 'C:\\Users\\O\u{2019}\u{2019}Neil\\Temp'"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn install_script_clears_version_before_copying_and_checks_before_registering() {
+        let s = install_script("C:\\p", "1", SVC, AGENT);
+        let rm = s
+            .find("Remove-Item -LiteralPath (Join-Path $pf 'version.txt')")
+            .unwrap();
+        assert!(
+            rm > s.find("throw 'NovaLink is still running").unwrap(),
+            "{s}"
+        );
+        assert!(rm < s.find("Copy-Item").unwrap(), "{s}");
+        let throw = s.find("is not the file inside NovaLink-Setup").unwrap();
+        assert!(
+            throw < s.find("New-Service").unwrap() && throw < s.find("Start-Service").unwrap(),
+            "{s}"
+        );
+    }
+
+    #[test]
     fn install_script_resets_a_service_that_points_elsewhere() {
         let s = install_script("C:\\p", "1", SVC, AGENT);
         assert!(s.contains("$cim.PathName -ne $bin"), "{s}");
@@ -215,6 +244,10 @@ mod tests {
             "{s}"
         );
         assert!(!s.contains("ProgramData"), "{s}");
+        assert!(
+            s.find("sc.exe delete").unwrap() < s.find("Remove-Item -LiteralPath $pf").unwrap(),
+            "{s}"
+        );
         // Everything is cleared before anything is deleted.
         assert!(
             s.find("Stop-Process").unwrap() < s.find("sc.exe delete").unwrap(),

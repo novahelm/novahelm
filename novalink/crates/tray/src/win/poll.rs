@@ -123,6 +123,9 @@ fn poll(agent: &Agent, cache: &mut Cache, doctor_now: bool) -> Option<UiState> {
         discovered: cache.discovered.clone(),
         checks: cache.checks.clone().unwrap_or_default(),
         start_at_login: super::system::start_at_login(),
-        lock_screen_offer: !novalink_agent::securecheck::service_installed(),
+        lock_screen_offer: novalink_agent::securecheck::program_files_agent_in_use(env!(
+            "CARGO_PKG_VERSION"
+        ))
+        .is_none(),
     })
 }

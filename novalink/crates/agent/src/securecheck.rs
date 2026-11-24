@@ -4,6 +4,16 @@
 
 pub const SERVICE_NAME: &str = "NovaLinkService";
 
+/// Whether the agent under Program Files is the one to run: the service must exist and the
+/// installed copy must be this version, so a declined upgrade still runs the new code.
+pub fn use_program_files_agent(
+    service_exists: bool,
+    pf_version: Option<&str>,
+    own_version: &str,
+) -> bool {
+    service_exists && pf_version.is_some_and(|v| v.trim() == own_version)
+}
+
 /// Whether the SYSTEM helper is up, and whether the service that starts it is installed.
 pub fn protected_screens(helper_up: bool, service_installed: bool) -> (bool, String, String) {
     let advice = if service_installed {
@@ -60,7 +70,8 @@ pub fn ctrl_alt_del(disable_cad: Option<u32>) -> (bool, String, String) {
 
 #[cfg(windows)]
 pub use reg::{
-    ctrl_alt_del_policy, program_files_agent, service_installed, uac_secure_desktop_policy,
+    ctrl_alt_del_policy, program_files_agent, program_files_agent_in_use, service_installed,
+    uac_secure_desktop_policy,
 };
 
 #[cfg(windows)]
@@ -141,6 +152,14 @@ mod reg {
         })
     }
 
+    /// The Program Files agent when it is the one to run for a program of `own_version`.
+    pub fn program_files_agent_in_use(own_version: &str) -> Option<PathBuf> {
+        let exe = program_files_agent()?;
+        let version = std::fs::read_to_string(exe.with_file_name("version.txt")).ok();
+        super::use_program_files_agent(service_installed(), version.as_deref(), own_version)
+            .then_some(exe)
+    }
+
     /// `%ProgramFiles%\NovaLink\novalink-agent.exe` when that file exists.
     pub fn program_files_agent() -> Option<PathBuf> {
         let exe = PathBuf::from(std::env::var_os("ProgramFiles")?)
@@ -153,6 +172,14 @@ mod reg {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn program_files_agent_needs_service_and_matching_version() {
+        assert!(use_program_files_agent(true, Some("0.2.0\r\n"), "0.2.0"));
+        assert!(!use_program_files_agent(false, Some("0.2.0"), "0.2.0"));
+        assert!(!use_program_files_agent(true, Some("0.1.0"), "0.2.0"));
+        assert!(!use_program_files_agent(true, None, "0.2.0"));
+    }
 
     #[test]
     fn protected_screens_follows_the_helper() {

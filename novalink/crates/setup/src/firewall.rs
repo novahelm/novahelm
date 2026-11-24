@@ -15,7 +15,20 @@ const MDNS_PORT: u16 = 5353;
 /// UDP ports only, on Private and Domain networks. The rule is left behind on uninstall:
 /// removing it needs admin again, and a rule for a missing program does nothing.
 pub fn script(exe: &str) -> String {
-    script_for(&format!("'{}'", exe.replace('\'', "''")))
+    script_for(&format!("'{}'", ps_quote(exe)))
+}
+
+/// Escapes `s` for a PowerShell single-quoted string. PowerShell treats the curly single
+/// quotes (and the low and reversed ones) as quote marks too, so all of them are doubled.
+pub fn ps_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        out.push(c);
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// `script` for a program named by a PowerShell expression (already quoted or computed).
@@ -52,6 +65,16 @@ mod tests {
         assert!(s.contains("Remove-NetFirewallRule") && s.contains("-Profile Private,Domain"));
         assert!(s.contains("-Protocol UDP -LocalPort 47474,5353"), "{s}");
         assert!(!s.contains("Public"), "{s}");
+    }
+
+    #[test]
+    fn script_doubles_curly_quotes_too() {
+        let s = script("C:\\Users\\O\u{2019}Neil\\novalink-agent.exe");
+        assert!(s.contains("$p = 'C:\\Users\\O\u{2019}\u{2019}Neil"), "{s}");
+        assert_eq!(
+            ps_quote("\u{2018}\u{201A}\u{201B}'"),
+            "\u{2018}\u{2018}\u{201A}\u{201A}\u{201B}\u{201B}''"
+        );
     }
 
     #[test]
