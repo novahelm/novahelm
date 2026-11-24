@@ -674,3 +674,26 @@ async fn wake_fails_after_the_deadline() {
             .any(|e| e["kind"] == "wake_failed")
     );
 }
+
+#[tokio::test]
+async fn pointer_is_forced_visible_only_while_a_remote_drives_it() {
+    let (a, pa, b, pb) = two_engines().await;
+    assert!(!pb.remote_pointer());
+    pa.push_physical_motion_to((1919.5, 540.));
+    wait_until(|| a.status().focus == b.status().me).await;
+    wait_until(|| pb.remote_pointer()).await;
+    assert!(!pa.remote_pointer());
+    pb.push_injected_motion_to((0.5, 540.));
+    wait_until(|| a.status().focus == a.status().me).await;
+    wait_until(|| !pb.remote_pointer()).await;
+}
+
+#[tokio::test]
+async fn shutdown_stops_forcing_the_pointer() {
+    let (a, pa, b, pb) = two_engines().await;
+    pa.push_physical_motion_to((1919.5, 540.));
+    wait_until(|| a.status().focus == b.status().me).await;
+    wait_until(|| pb.remote_pointer()).await;
+    b.shutdown().await;
+    assert!(!pb.remote_pointer());
+}

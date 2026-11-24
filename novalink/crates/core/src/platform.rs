@@ -27,6 +27,9 @@ pub trait Platform: Send + Sync + 'static {
     /// Ask the OS to show its permission prompts and list this process in the privacy
     /// settings. Does nothing where no permission is needed.
     fn request_permissions(&self) {}
+    /// On while another machine moves this one's pointer. Windows hides the pointer
+    /// when no mouse is plugged in, so the platform forces it visible meanwhile.
+    fn set_remote_pointer(&self, _on: bool) {}
 }
 
 #[cfg(feature = "fake")]
@@ -50,6 +53,7 @@ mod fake {
         desktop_switch: bool,
         deny_capture: bool,
         requests: u32,
+        remote_pointer: bool,
     }
 
     /// In-memory `Platform` for tests. Clones share state.
@@ -88,6 +92,7 @@ mod fake {
                     desktop_switch: false,
                     deny_capture: false,
                     requests: 0,
+                    remote_pointer: false,
                 })),
             }
         }
@@ -180,6 +185,10 @@ mod fake {
             self.st.lock().unwrap().requests
         }
 
+        pub fn remote_pointer(&self) -> bool {
+            self.st.lock().unwrap().remote_pointer
+        }
+
         pub fn suppressed(&self) -> bool {
             self.st.lock().unwrap().suppressed
         }
@@ -248,6 +257,10 @@ mod fake {
 
         fn take_desktop_switch(&self) -> bool {
             std::mem::take(&mut self.st.lock().unwrap().desktop_switch)
+        }
+
+        fn set_remote_pointer(&self, on: bool) {
+            self.st.lock().unwrap().remote_pointer = on;
         }
     }
 }

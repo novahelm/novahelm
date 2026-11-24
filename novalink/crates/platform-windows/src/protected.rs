@@ -202,6 +202,10 @@ impl<P: Platform> Platform for ProtectedPlatform<P> {
         self.inner.warp(pos);
     }
 
+    fn set_remote_pointer(&self, on: bool) {
+        self.inner.set_remote_pointer(on);
+    }
+
     fn cursor_pos(&self) -> (f64, f64) {
         let st = self.shared.lock();
         match st.cursor {

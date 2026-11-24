@@ -185,6 +185,8 @@ struct Core {
     edge_latch: Option<Edge>,
     last_health: Instant,
     dry_inject: bool,
+    /// Whether the platform was last told a remote is moving our pointer.
+    remote_pointer: bool,
     log_dir: PathBuf,
     settings: Settings,
     settings_path: PathBuf,
@@ -365,6 +367,17 @@ impl Core {
                 Action::ReleaseInjected => self.release(why),
                 Action::ResetLocalSync => {}
             }
+        }
+        // Enter turns it on and Leave off; this catches losing the controller or the focus.
+        if self.control.focus() != self.me || self.control.controller() == self.me {
+            self.set_remote_pointer(false);
+        }
+    }
+
+    fn set_remote_pointer(&mut self, on: bool) {
+        if self.remote_pointer != on {
+            self.remote_pointer = on;
+            self.platform.set_remote_pointer(on);
         }
     }
 
@@ -703,6 +716,7 @@ impl Core {
                 let acts = self.control.on_leave(peer);
                 let before = self.held_injected.len() as u32;
                 self.apply(acts, "leave");
+                self.set_remote_pointer(false);
                 // Checked again after the settle, on a later tick, so a key that
                 // arrives after the release shows up.
                 self.settles.push(Settle {
@@ -767,6 +781,7 @@ impl Core {
         }
         let acts = self.control.on_enter(peer, entry);
         self.apply(acts, "enter");
+        self.set_remote_pointer(true);
     }
 
     fn on_edge_hit(&mut self, peer: DeviceId, edge: Edge, frac: f32) {
@@ -858,6 +873,7 @@ impl Core {
             }
         }
         self.platform.set_suppress(false);
+        self.set_remote_pointer(false);
         self.rec(json!({"kind":"engine_panic","released":evs.len()}));
         if let Err(e) = self
             .recorder
@@ -875,6 +891,7 @@ impl Core {
             self.forget_remote(focus);
         }
         self.platform.set_suppress(false);
+        self.set_remote_pointer(false);
         self.rec(json!({"kind":"shutdown"}));
     }
 
@@ -1043,6 +1060,7 @@ impl Engine {
             edge_latch: None,
             last_health: Instant::now(),
             dry_inject: opts.dry_inject,
+            remote_pointer: false,
             log_dir: opts.log_dir,
             settings: opts.settings,
             settings_path: opts.settings_path,

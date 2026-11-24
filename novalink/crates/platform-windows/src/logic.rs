@@ -80,6 +80,19 @@ pub fn take_whole(rem: &mut (f32, f32), dx: f32, dy: f32) -> (i32, i32) {
     (wx as i32, wy as i32)
 }
 
+/// Mouse Keys flags (`MKF_*`), so `force_mouse_keys` is testable anywhere.
+pub const MKF_MOUSEKEYSON: u32 = 0x1;
+pub const MKF_AVAILABLE: u32 = 0x2;
+pub const MKF_INDICATOR: u32 = 0x20;
+
+/// The Mouse Keys flags that make Windows draw the pointer with no mouse plugged in
+/// (Mouse Keys on, its tray icon off), or `None` when Mouse Keys is already on and
+/// there is nothing to force or put back.
+pub fn force_mouse_keys(flags: u32) -> Option<u32> {
+    (flags & MKF_MOUSEKEYSON == 0)
+        .then_some((flags | MKF_MOUSEKEYSON | MKF_AVAILABLE) & !MKF_INDICATOR)
+}
+
 /// What a hook does with a physical key/button event while input may be suppressed.
 /// `passed` = its down already reached the local OS. Returns `(swallow, passed_after)`.
 /// A down seen while suppressing is swallowed; its up is swallowed only if its down was,
@@ -210,6 +223,16 @@ impl HookPoints {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forcing_mouse_keys_turns_it_on_without_its_icon_and_keeps_other_flags() {
+        assert_eq!(force_mouse_keys(0), Some(MKF_MOUSEKEYSON | MKF_AVAILABLE));
+        assert_eq!(
+            force_mouse_keys(MKF_INDICATOR | 0x100),
+            Some(MKF_MOUSEKEYSON | MKF_AVAILABLE | 0x100)
+        );
+        assert_eq!(force_mouse_keys(MKF_MOUSEKEYSON | MKF_AVAILABLE), None);
+    }
 
     #[test]
     fn physical_requires_no_injected_flag_and_no_magic() {

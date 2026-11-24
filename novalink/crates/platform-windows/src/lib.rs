@@ -23,6 +23,8 @@ pub mod inject;
 #[cfg(windows)]
 mod platform;
 #[cfg(windows)]
+mod pointer;
+#[cfg(windows)]
 pub use platform::WinPlatform;
 
 pub use protected::ProtectedPlatform;
