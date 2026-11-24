@@ -226,7 +226,10 @@ mod tests {
     #[test]
     fn install_script_writes_version_last() {
         let s = install_script("C:\\p", "0.2.0", SVC, AGENT);
-        let v = s.find("version.txt").unwrap();
+        // An earlier line removes a stale version.txt; this is the write.
+        let v = s
+            .find("Set-Content -LiteralPath (Join-Path $pf 'version.txt')")
+            .unwrap();
         assert!(v > s.find("Start-Service").unwrap(), "{s}");
         assert!(s.contains("-Value '0.2.0'"), "{s}");
     }
