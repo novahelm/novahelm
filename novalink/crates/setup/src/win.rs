@@ -39,6 +39,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{Interface, Owned, PCWSTR, PWSTR};
 
 mod payload {
+    // `SERVICE` is installed by a later task, once setup registers the SYSTEM service;
+    // for now it is only embedded so the Windows package build carries it.
+    #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/payload.rs"));
 }
 

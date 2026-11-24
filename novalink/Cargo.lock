@@ -1536,6 +1536,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "novalink-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "novalink-core",
+ "novalink-platform-windows",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "windows",
+]
+
+[[package]]
 name = "novalink-setup"
 version = "0.1.0"
 dependencies = [

@@ -13,6 +13,8 @@ pub mod watchdog;
 #[cfg(windows)]
 pub mod capture;
 #[cfg(windows)]
+pub mod desktop;
+#[cfg(windows)]
 pub mod displays;
 #[cfg(windows)]
 pub mod inject;
