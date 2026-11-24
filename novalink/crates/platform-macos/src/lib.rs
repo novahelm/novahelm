@@ -6,6 +6,7 @@
 pub mod capture;
 pub mod displays;
 mod ffi;
+mod freeze;
 pub mod inject;
 pub mod keymap;
 
@@ -20,8 +21,7 @@ pub struct MacPlatform {
     injector: inject::Injector,
     suppress: Arc<AtomicBool>,
     capturing: AtomicBool,
-    /// Whether we currently hold a cursor-hide (hide/show calls are counted by the OS).
-    hidden: AtomicBool,
+    freeze: Arc<freeze::Freeze>,
 }
 
 impl MacPlatform {
@@ -31,7 +31,7 @@ impl MacPlatform {
             injector: inject::Injector::new()?,
             suppress: Arc::new(AtomicBool::new(false)),
             capturing: AtomicBool::new(false),
-            hidden: AtomicBool::new(false),
+            freeze: Arc::new(freeze::Freeze::default()),
         })
     }
 }
@@ -46,7 +46,7 @@ impl Platform for MacPlatform {
             !self.capturing.swap(true, Ordering::AcqRel),
             "capture already started"
         );
-        let r = capture::start(tx, self.suppress.clone());
+        let r = capture::start(tx, self.suppress.clone(), self.freeze.clone());
         if r.is_err() {
             self.capturing.store(false, Ordering::Release);
         }
@@ -63,19 +63,10 @@ impl Platform for MacPlatform {
 
     fn set_suppress(&self, on: bool) {
         self.suppress.store(on, Ordering::Release);
-        // SAFETY: plain CG calls; hide/show are balanced via `hidden`.
-        unsafe {
-            if on {
-                CGAssociateMouseAndMouseCursorPosition(0);
-                if !self.hidden.swap(true, Ordering::AcqRel) {
-                    CGDisplayHideCursor(CGMainDisplayID());
-                }
-            } else {
-                if self.hidden.swap(false, Ordering::AcqRel) {
-                    CGDisplayShowCursor(CGMainDisplayID());
-                }
-                CGAssociateMouseAndMouseCursorPosition(1);
-            }
+        if on {
+            self.freeze.freeze(self.injector.cursor_pos());
+        } else {
+            self.freeze.thaw();
         }
     }
 

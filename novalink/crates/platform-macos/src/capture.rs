@@ -101,6 +101,7 @@ struct Ctx {
     buttons_passed: [AtomicBool; 8],
     tx: UnboundedSender<LocalEvent>,
     suppress: Arc<AtomicBool>,
+    freeze: Arc<crate::freeze::Freeze>,
     port: AtomicPtr<c_void>,
 }
 
@@ -237,6 +238,15 @@ extern "C" fn callback(
         }
         if physical {
             let suppressed = ctx.suppress.load(Ordering::Acquire);
+            if suppressed
+                && matches!(
+                    ty,
+                    MOUSE_MOVED | LEFT_MOUSE_DRAGGED | RIGHT_MOUSE_DRAGGED | OTHER_MOUSE_DRAGGED
+                )
+            {
+                let p = CGEventGetLocation(ev);
+                ctx.freeze.repair((p.x, p.y));
+            }
             let button = |n: i64| Slot::Button(n.clamp(0, 7) as u8);
             let slot = match ty {
                 KEY_DOWN | KEY_UP => Some((
@@ -281,12 +291,17 @@ extern "C" fn callback(
 ///
 /// The context lives as long as the tap. It is freed when no tap was made from it, so
 /// retrying while permissions are missing doesn't leak; once the tap runs it is never freed.
-pub fn start(tx: UnboundedSender<LocalEvent>, suppress: Arc<AtomicBool>) -> anyhow::Result<()> {
+pub fn start(
+    tx: UnboundedSender<LocalEvent>,
+    suppress: Arc<AtomicBool>,
+    freeze: Arc<crate::freeze::Freeze>,
+) -> anyhow::Result<()> {
     let ctx: *mut Ctx = Box::into_raw(Box::new(Ctx {
         keys_passed: std::array::from_fn(|_| AtomicBool::new(false)),
         buttons_passed: std::array::from_fn(|_| AtomicBool::new(false)),
         tx,
         suppress,
+        freeze,
         port: AtomicPtr::new(std::ptr::null_mut()),
     }));
     let ctx_addr = ctx as usize;
