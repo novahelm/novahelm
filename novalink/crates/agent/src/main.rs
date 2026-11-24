@@ -49,7 +49,11 @@ fn real_platform() -> Result<Arc<dyn Platform>> {
 
 #[cfg(windows)]
 fn real_platform() -> Result<Arc<dyn Platform>> {
-    Ok(Arc::new(novalink_platform_windows::WinPlatform::new()?))
+    // Wrapped so input can reach the lock screen and UAC prompts through the service's
+    // helper when one is running; without it, behaviour is unchanged.
+    Ok(Arc::new(novalink_platform_windows::ProtectedPlatform::new(
+        novalink_platform_windows::WinPlatform::new()?,
+    )))
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]

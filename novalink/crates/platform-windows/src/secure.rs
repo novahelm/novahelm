@@ -304,4 +304,18 @@ mod tests {
         assert!(!r.on_helper(true));
         assert!(!r.use_helper());
     }
+
+    #[test]
+    fn route_without_helper_stays_direct() {
+        let mut r = Route::default();
+        for k in [
+            DesktopKind::Protected,
+            DesktopKind::Normal,
+            DesktopKind::Protected,
+            DesktopKind::Protected,
+        ] {
+            assert!(!r.on_desktop(k), "no switch without a helper");
+            assert!(!r.use_helper());
+        }
+    }
 }

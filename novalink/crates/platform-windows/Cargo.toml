@@ -32,4 +32,5 @@ windows = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+novalink-core = { path = "../core", features = ["fake"] }
 tokio.workspace = true

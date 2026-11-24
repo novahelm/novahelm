@@ -1,11 +1,14 @@
 //! novalink-service: the SYSTEM-side helper for driving Windows' protected screens.
 
-// `decide::helper_action` is wired into the service's session-watching loop in a later
-// task; until then it is exercised only by its own tests.
-#[allow(dead_code)]
+// Only the Windows service uses these; elsewhere they are exercised by their tests alone.
+#[cfg_attr(not(windows), allow(dead_code))]
 mod decide;
 #[cfg(windows)]
 mod helper;
+#[cfg(windows)]
+mod service;
+#[cfg(windows)]
+mod winutil;
 
 #[cfg(windows)]
 fn main() {
@@ -15,8 +18,13 @@ fn main() {
             eprintln!("novalink-service --helper: {e:#}");
             std::process::exit(1);
         }
+    } else if args.is_empty() {
+        if let Err(e) = service::run() {
+            eprintln!("novalink-service: {e:#}");
+            std::process::exit(1);
+        }
     } else {
-        eprintln!("usage: novalink-service --helper");
+        eprintln!("usage: novalink-service [--helper]");
         std::process::exit(2);
     }
 }
