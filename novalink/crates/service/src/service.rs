@@ -17,10 +17,15 @@ use windows::Win32::Security::{
     DuplicateTokenEx, SecurityImpersonation, SetTokenInformation, TOKEN_ALL_ACCESS, TokenPrimary,
     TokenSessionId,
 };
+use windows::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+    SetInformationJobObject,
+};
 use windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;
 use windows::Win32::System::Threading::{
-    CREATE_NO_WINDOW, CreateProcessAsUserW, GetCurrentProcess, OpenProcessToken,
-    PROCESS_INFORMATION, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
+    CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessAsUserW, GetCurrentProcess, OpenProcessToken,
+    PROCESS_INFORMATION, ResumeThread, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
 };
 use windows::core::{Owned, PCWSTR, PWSTR};
 use windows_service::service::{
@@ -99,10 +104,10 @@ fn run_service() -> anyhow::Result<()> {
     let accept = ServiceControlAccept::STOP
         | ServiceControlAccept::SHUTDOWN
         | ServiceControlAccept::SESSION_CHANGE;
+    let mut supervisor = Supervisor::new()?;
     handler.set_service_status(status(ServiceState::Running, accept, 0))?;
     tracing::info!("novalink service running");
 
-    let mut supervisor = Supervisor::new();
     let mut user_changed = false;
     loop {
         supervisor.step(user_changed);
@@ -147,8 +152,38 @@ impl Helper {
     }
 }
 
+/// A job object that kills whatever is in it when its last handle closes, so a stopped
+/// or crashed service never leaves a helper holding the pipe name or locking the exe.
+fn kill_on_close_job() -> anyhow::Result<Owned<HANDLE>> {
+    // SAFETY: plain call; the new handle is owned by the returned `Owned`.
+    let job =
+        unsafe { Owned::new(CreateJobObjectW(None, PCWSTR::null()).context("CreateJobObjectW")?) };
+    let info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        BasicLimitInformation:
+            windows::Win32::System::JobObjects::JOBOBJECT_BASIC_LIMIT_INFORMATION {
+                LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                ..Default::default()
+            },
+        ..Default::default()
+    };
+    // SAFETY: `job` is a valid job handle; `info` is a fully initialised structure of
+    // the class and size passed.
+    unsafe {
+        SetInformationJobObject(
+            *job,
+            JobObjectExtendedLimitInformation,
+            std::ptr::addr_of!(info).cast(),
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    }
+    .context("SetInformationJobObject")?;
+    Ok(job)
+}
+
 /// Owns the helper process and decides when to (re)start it.
 struct Supervisor {
+    /// Every helper is put in this job; dropping it (service exit) kills the helper.
+    job: Owned<HANDLE>,
     helper: Option<Helper>,
     backoff: RestartBackoff,
     /// No new helper before this instant (restart backoff).
@@ -156,12 +191,13 @@ struct Supervisor {
 }
 
 impl Supervisor {
-    fn new() -> Self {
-        Self {
+    fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            job: kill_on_close_job()?,
             helper: None,
             backoff: RestartBackoff::new(),
             not_before: Instant::now(),
-        }
+        })
     }
 
     fn step(&mut self, user_changed: bool) {
@@ -195,7 +231,7 @@ impl Supervisor {
         if Instant::now() < self.not_before {
             return;
         }
-        match spawn_helper(session) {
+        match spawn_helper(session, *self.job) {
             Ok(process) => {
                 tracing::info!(session, "helper started");
                 self.helper = Some(Helper {
@@ -231,7 +267,7 @@ impl Supervisor {
 
 /// Starts `<this exe> --helper` as SYSTEM in `session` on the interactive desktop's
 /// window station, by moving a copy of this process's token into that session.
-fn spawn_helper(session: u32) -> anyhow::Result<Owned<HANDLE>> {
+fn spawn_helper(session: u32, job: HANDLE) -> anyhow::Result<Owned<HANDLE>> {
     let exe = std::env::current_exe().context("finding this executable")?;
     let exe_wide = winutil::to_wide(&exe.to_string_lossy());
     let mut cmdline = winutil::to_wide(&format!("\"{}\" --helper", exe.display()));
@@ -289,7 +325,7 @@ fn spawn_helper(session: u32) -> anyhow::Result<Owned<HANDLE>> {
             None,
             None,
             false,
-            CREATE_NO_WINDOW,
+            CREATE_NO_WINDOW | CREATE_SUSPENDED,
             None,
             PCWSTR::null(),
             &startup,
@@ -298,6 +334,21 @@ fn spawn_helper(session: u32) -> anyhow::Result<Owned<HANDLE>> {
     }
     .context("CreateProcessAsUserW")?;
     // SAFETY: both handles were just returned by `CreateProcessAsUserW` and are owned here.
-    let (process, _thread) = unsafe { (Owned::new(info.hProcess), Owned::new(info.hThread)) };
+    let (process, thread) = unsafe { (Owned::new(info.hProcess), Owned::new(info.hThread)) };
+
+    // Started suspended so it is in the job before it runs a single instruction.
+    // SAFETY: `job` and `process` are valid handles.
+    if let Err(e) = unsafe { AssignProcessToJobObject(job, *process) } {
+        // SAFETY: `process` is valid; never let a helper run outside the job.
+        unsafe {
+            let _ = TerminateProcess(*process, 1);
+        }
+        return Err(anyhow::Error::new(e).context("AssignProcessToJobObject"));
+    }
+    // SAFETY: `thread` is the valid, suspended initial thread of the new process.
+    anyhow::ensure!(
+        unsafe { ResumeThread(*thread) } != u32::MAX,
+        "ResumeThread failed"
+    );
     Ok(process)
 }

@@ -235,26 +235,60 @@ impl<P: Platform> Platform for ProtectedPlatform<P> {
     }
 }
 
+/// Lets something happen once per protected-screen visit, until it is reset.
+#[derive(Default)]
+#[cfg_attr(not(windows), allow(dead_code))] // the pipe thread uses it; elsewhere only tests
+struct OncePerVisit(bool);
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl OncePerVisit {
+    /// True the first time since the last reset.
+    fn first(&mut self) -> bool {
+        !std::mem::replace(&mut self.0, true)
+    }
+
+    fn reset(&mut self) {
+        self.0 = false;
+    }
+}
+
 #[cfg(windows)]
 mod pipe {
     use super::*;
-    use crate::secure::{FrameReader, HELPER_PROTO, encode, helper_pipe_name};
+    use crate::secure::{
+        FrameReader, HELPER_PROTO, encode, helper_pipe_name, service_image_allowed,
+    };
     use anyhow::Context;
+    use std::os::windows::io::AsRawHandle;
+    use std::path::PathBuf;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
-    use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
+    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HANDLE};
+    use windows::Win32::Security::{
+        GetTokenInformation, IsWellKnownSid, TOKEN_QUERY, TOKEN_USER, TokenUser, WinLocalSystemSid,
+    };
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
     use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
     use windows::Win32::System::StationsAndDesktops::{
         CloseDesktop, DESKTOP_READOBJECTS, OpenInputDesktop,
     };
-    use windows::Win32::System::Threading::GetCurrentProcessId;
-    use windows::core::HRESULT;
+    use windows::Win32::System::Threading::{
+        GetCurrentProcessId, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    use windows::Win32::UI::Shell::{
+        FOLDERID_ProgramFiles, KNOWN_FOLDER_FLAG, SHGetKnownFolderPath,
+    };
+    use windows::core::{HRESULT, Owned, PWSTR};
 
     /// How often to look for a helper, and so how long a gap between pipe attempts.
     const RETRY: Duration = Duration::from_secs(2);
     /// How often to check for a protected screen while no helper is connected.
     const PROBE: Duration = Duration::from_millis(500);
+    /// How long one write to the helper may take before it is treated as stuck.
+    const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
     pub(super) fn spawn(shared: Arc<Shared>) {
         let session = match own_session() {
@@ -278,7 +312,7 @@ mod pipe {
                         return;
                     }
                 };
-                rt.block_on(run(shared, name));
+                rt.block_on(run(shared, name, session));
             });
         if let Err(e) = started {
             tracing::warn!(error = %e, "protected screens unavailable: no pipe thread");
@@ -293,35 +327,143 @@ mod pipe {
         Ok(session)
     }
 
-    async fn run(shared: Arc<Shared>, name: String) {
-        // Whether this protected visit has already been reported.
-        let mut warned = false;
+    async fn run(shared: Arc<Shared>, name: String, session: u32) {
+        // Each is reported once per protected visit: reset when the helper really comes
+        // up or the desktop is back to normal, never merely because the pipe opened.
+        let mut missing = OncePerVisit::default();
+        let mut rejected = OncePerVisit::default();
         while !shared.stopped() {
             match ClientOptions::new().open(&name) {
-                Ok(client) => {
-                    warned = false;
-                    if let Err(e) = serve(&shared, client).await {
-                        tracing::debug!(error = %e, "helper connection ended");
+                Ok(client) => match verify_server(&client, session) {
+                    Ok(()) => {
+                        let mut spoke = false;
+                        if let Err(e) = serve(&shared, client, &mut spoke).await {
+                            tracing::debug!(error = %e, "helper connection ended");
+                        }
+                        if spoke {
+                            missing.reset();
+                            rejected.reset();
+                        }
                     }
-                }
+                    Err(e) => {
+                        // Dropping `client` closes the pipe before anything was sent.
+                        if rejected.first() {
+                            tracing::warn!(error = %e, "not using the helper pipe: its server is not the NovaLink service");
+                        }
+                    }
+                },
                 Err(e) => tracing::trace!(error = %e, "helper pipe not available"),
             }
             for _ in 0..(RETRY.as_millis() / PROBE.as_millis()) {
                 if shared.stopped() {
                     return;
                 }
-                if shared.is_up() {
-                    warned = false;
-                } else if input_desktop_denied() {
-                    if !std::mem::replace(&mut warned, true) {
-                        tracing::warn!("protected screen, helper not running");
-                    }
-                } else {
-                    warned = false;
+                if shared.is_up() || !input_desktop_denied() {
+                    missing.reset();
+                    rejected.reset();
+                } else if missing.first() {
+                    tracing::warn!("protected screen, helper not running");
                 }
                 tokio::time::sleep(PROBE).await;
             }
         }
+    }
+
+    /// Confirms the process serving `client`'s pipe is the installed NovaLink service
+    /// running in this session, before anything (a PIN, say) is sent to it. The helper
+    /// creates its pipe only after sign-in, so another process could otherwise get there
+    /// first and impersonate it.
+    fn verify_server(client: &NamedPipeClient, session: u32) -> anyhow::Result<()> {
+        let mut pid = 0u32;
+        // SAFETY: the pipe handle is valid for the call; `pid` is a valid out-pointer.
+        unsafe { GetNamedPipeServerProcessId(HANDLE(client.as_raw_handle()), &mut pid) }
+            .context("GetNamedPipeServerProcessId")?;
+        // SAFETY: closed via `Owned` when it drops.
+        let proc = unsafe {
+            Owned::new(
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+                    .context("OpenProcess on the pipe server")?,
+            )
+        };
+
+        let mut server_session = 0u32;
+        // SAFETY: valid out-pointer.
+        unsafe { ProcessIdToSessionId(pid, &mut server_session) }
+            .context("ProcessIdToSessionId on the pipe server")?;
+        anyhow::ensure!(
+            server_session == session,
+            "pipe server runs in session {server_session}, not {session}"
+        );
+
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        // SAFETY: `buf` outlives the call; `len` starts as its capacity in characters.
+        unsafe {
+            QueryFullProcessImageNameW(*proc, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len)
+        }
+        .context("QueryFullProcessImageNameW on the pipe server")?;
+        let image = PathBuf::from(String::from_utf16_lossy(&buf[..len as usize]));
+        let program_files = program_files()?;
+        anyhow::ensure!(
+            service_image_allowed(&image, &program_files),
+            "pipe server is {}",
+            image.display()
+        );
+
+        ensure_system_if_readable(*proc)
+    }
+
+    /// The service's token is LocalSystem's, which an ordinary user normally cannot open;
+    /// when this process can open the server's token, it must be LocalSystem's. (Failing
+    /// to open it proves nothing either way: the image and session checks carry that.)
+    fn ensure_system_if_readable(proc: HANDLE) -> anyhow::Result<()> {
+        let mut raw = HANDLE::default();
+        // SAFETY: valid out-pointer.
+        if unsafe { OpenProcessToken(proc, TOKEN_QUERY, &mut raw) }.is_err() {
+            return Ok(());
+        }
+        // SAFETY: `raw` was just produced by `OpenProcessToken`.
+        let token = unsafe { Owned::new(raw) };
+        let mut needed = 0u32;
+        // SAFETY: a null buffer with zero length only asks for the required size.
+        let _ = unsafe { GetTokenInformation(*token, TokenUser, None, 0, &mut needed) };
+        anyhow::ensure!(
+            needed > 0,
+            "GetTokenInformation reported no size for TokenUser"
+        );
+        // `u64` elements give the buffer the 8-byte alignment `TOKEN_USER` needs.
+        let mut buf = vec![0u64; (needed as usize).div_ceil(8)];
+        // SAFETY: `buf` holds at least `needed` bytes.
+        unsafe {
+            GetTokenInformation(
+                *token,
+                TokenUser,
+                Some(buf.as_mut_ptr().cast()),
+                needed,
+                &mut needed,
+            )
+        }
+        .context("GetTokenInformation(TokenUser)")?;
+        // SAFETY: the kernel wrote a `TOKEN_USER` into the aligned `buf`; its SID points
+        // into `buf`, which is alive for the call below.
+        let system = unsafe {
+            let user = buf.as_ptr().cast::<TOKEN_USER>();
+            IsWellKnownSid((*user).User.Sid, WinLocalSystemSid).as_bool()
+        };
+        anyhow::ensure!(system, "pipe server does not run as LocalSystem");
+        Ok(())
+    }
+
+    fn program_files() -> anyhow::Result<PathBuf> {
+        // SAFETY: the returned string is freed with `CoTaskMemFree` below.
+        let raw =
+            unsafe { SHGetKnownFolderPath(&FOLDERID_ProgramFiles, KNOWN_FOLDER_FLAG(0), None) }
+                .context("SHGetKnownFolderPath")?;
+        // SAFETY: `raw` is non-null and NUL-terminated per the call succeeding.
+        let s = unsafe { raw.to_string() }.context("Program Files path was not valid UTF-16");
+        // SAFETY: `raw` was allocated by `SHGetKnownFolderPath`.
+        unsafe { CoTaskMemFree(Some(raw.0.cast())) };
+        Ok(PathBuf::from(s?))
     }
 
     /// True when this process may not open the desktop that has input, which is what
@@ -340,15 +482,30 @@ mod pipe {
         }
     }
 
+    /// Writes one frame, giving up if the helper has stopped reading.
+    async fn write_frame<W: AsyncWriteExt + Unpin>(wr: &mut W, bytes: &[u8]) -> anyhow::Result<()> {
+        match tokio::time::timeout(WRITE_TIMEOUT, wr.write_all(bytes)).await {
+            Ok(r) => r.context("writing to the helper"),
+            Err(_) => anyhow::bail!("the helper stopped reading"),
+        }
+    }
+
     /// One connection's lifetime: says `Hello`, then forwards queued messages out and
-    /// helper messages in until either side ends it.
-    async fn serve(shared: &Shared, client: NamedPipeClient) -> anyhow::Result<()> {
+    /// helper messages in until either side ends it. `spoke` is set once the helper has
+    /// said something.
+    async fn serve(
+        shared: &Shared,
+        client: NamedPipeClient,
+        spoke: &mut bool,
+    ) -> anyhow::Result<()> {
         let (mut rd, mut wr) = tokio::io::split(client);
-        wr.write_all(&encode(&ToHelper::Hello {
-            proto: HELPER_PROTO,
-        }))
-        .await
-        .context("sending Hello")?;
+        write_frame(
+            &mut wr,
+            &encode(&ToHelper::Hello {
+                proto: HELPER_PROTO,
+            }),
+        )
+        .await?;
         let (tx, mut rx) = tokio::sync::mpsc::channel(WRITE_QUEUE);
         shared.link_up(tx);
 
@@ -359,8 +516,8 @@ mod pipe {
             tokio::select! {
                 queued = rx.recv() => match queued {
                     Some(m) => {
-                        if let Err(e) = wr.write_all(&encode(&m)).await {
-                            break 'conn Err(anyhow::Error::new(e).context("writing to the helper"));
+                        if let Err(e) = write_frame(&mut wr, &encode(&m)).await {
+                            break 'conn Err(e);
                         }
                     }
                     // `inject` gave up on this connection.
@@ -372,7 +529,10 @@ mod pipe {
                         reader.push(&buf[..n]);
                         loop {
                             match reader.next::<FromHelper>() {
-                                Ok(Some(m)) => shared.on_message(m),
+                                Ok(Some(m)) => {
+                                    shared.on_message(m);
+                                    *spoke |= shared.is_up();
+                                }
                                 Ok(None) => break,
                                 Err(e) => break 'conn Err(anyhow::anyhow!(e.to_string())),
                             }
@@ -421,6 +581,16 @@ mod tests {
         p.shared.link_up(tx);
         p.shared.on_message(FromHelper::Desktop(kind));
         (p, fake, rx)
+    }
+
+    #[test]
+    fn once_per_visit_repeats_only_after_a_reset() {
+        let mut o = OncePerVisit::default();
+        assert!(o.first());
+        assert!(!o.first());
+        assert!(!o.first());
+        o.reset();
+        assert!(o.first());
     }
 
     #[test]

@@ -8,21 +8,24 @@ use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
 use windows::Win32::Foundation::{HLOCAL, LocalFree};
 use windows::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-    GetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT, SetNamedSecurityInfoW,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
+    SDDL_REVISION_1, SE_FILE_OBJECT, SetSecurityInfo,
 };
 use windows::Win32::Security::{
     ACL, DACL_SECURITY_INFORMATION, GetSecurityDescriptorDacl, OWNER_SECURITY_INFORMATION,
     PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES,
 };
 use windows::Win32::Storage::FileSystem::{
-    CreateDirectoryW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, GetFileAttributesW,
+    BY_HANDLE_FILE_INFORMATION, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle,
+    OPEN_EXISTING, READ_CONTROL, WRITE_DAC,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::UI::Shell::{FOLDERID_ProgramData, KNOWN_FOLDER_FLAG, SHGetKnownFolderPath};
-use windows::core::{GUID, PCWSTR, PWSTR};
+use windows::core::{GUID, Owned, PCWSTR, PWSTR};
 
 /// Protected DACL for `%ProgramData%\NovaLink`: SYSTEM and Administrators only.
 const PROTECTED_DIR_SDDL: &str = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)";
@@ -65,15 +68,15 @@ pub fn init_logging(file_prefix: &str) -> Option<WorkerGuard> {
 }
 
 /// `%ProgramData%\NovaLink\logs`, created with a SYSTEM/Administrators-only DACL if it is
-/// missing, or else verified to be a real directory (not a junction or symlink) owned by
-/// SYSTEM or Administrators. A normal user can create entries under `%ProgramData%`, so
-/// anything else there could redirect what SYSTEM writes.
+/// missing, and in either case verified (a real directory, not a junction or symlink,
+/// owned by SYSTEM or Administrators) and then locked to that DACL. A normal user can
+/// create entries under `%ProgramData%`, so anything else there could redirect what
+/// SYSTEM writes.
 fn prepare_log_dir() -> anyhow::Result<PathBuf> {
     let nova = known_folder(&FOLDERID_ProgramData)?.join("NovaLink");
     ensure_trusted_dir(&nova, Some(PROTECTED_DIR_SDDL))?;
     let logs = nova.join("logs");
-    // Inherits the protected DACL from `NovaLink`.
-    ensure_trusted_dir(&logs, None)?;
+    ensure_trusted_dir(&logs, Some(PROTECTED_DIR_SDDL))?;
     Ok(logs)
 }
 
@@ -83,47 +86,7 @@ fn ensure_trusted_dir(path: &Path, sddl: Option<&str>) -> anyhow::Result<()> {
         // judges what is there.
         let _ = create_dir(path, sddl);
     }
-    check_trusted_dir(path)?;
-    if let Some(sddl) = sddl {
-        // A trusted owner says nothing about who else was granted access (a directory
-        // made by an older install, or by an administrator, may let users write into
-        // it), so pin the DACL to the intended one before anything is logged there.
-        reset_dacl(path, sddl)?;
-    }
-    Ok(())
-}
-
-/// Replaces `path`'s DACL with the one `sddl` describes, protected so nothing is
-/// inherited from the parent; inheritable entries propagate to existing children.
-fn reset_dacl(path: &Path, sddl: &str) -> anyhow::Result<()> {
-    let sd = SecurityDescriptor::from_sddl(sddl)?;
-    let mut present = windows::core::BOOL(0);
-    let mut defaulted = windows::core::BOOL(0);
-    let mut dacl: *mut ACL = std::ptr::null_mut();
-    // SAFETY: `sd` holds a valid descriptor for the call; the out-pointers are valid, and
-    // `dacl` points into `sd`, which outlives its use below.
-    unsafe { GetSecurityDescriptorDacl(sd.sd, &mut present, &mut dacl, &mut defaulted) }
-        .context("GetSecurityDescriptorDacl")?;
-    anyhow::ensure!(present.as_bool() && !dacl.is_null(), "SDDL carries no DACL");
-    let wide: Vec<u16> = path
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    // SAFETY: `wide` is NUL-terminated and `dacl` is valid (see above) for the call.
-    let err = unsafe {
-        SetNamedSecurityInfoW(
-            PCWSTR(wide.as_ptr()),
-            SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-            None,
-            None,
-            Some(dacl.cast_const()),
-            None,
-        )
-    };
-    err.ok()
-        .with_context(|| format!("resetting the DACL of {}", path.display()))
+    secure_dir(path, PROTECTED_DIR_SDDL)
 }
 
 fn create_dir(path: &Path, sddl: Option<&str>) -> anyhow::Result<()> {
@@ -142,45 +105,68 @@ fn create_dir(path: &Path, sddl: Option<&str>) -> anyhow::Result<()> {
         .with_context(|| format!("creating {}", path.display()))
 }
 
-fn check_trusted_dir(path: &Path) -> anyhow::Result<()> {
+/// Opens `path` once and, through that one handle, checks it is a real directory (not a
+/// reparse point) owned by a trusted SID, then replaces its DACL with the protected one
+/// `sddl` describes. Using one handle for the check and the change means the directory
+/// cannot be swapped for a junction in between. Inheritable entries are applied to
+/// children created later; existing children keep what they have.
+fn secure_dir(path: &Path, sddl: &str) -> anyhow::Result<()> {
     let wide: Vec<u16> = path
         .as_os_str()
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    // SAFETY: `wide` is NUL-terminated. Reads the attributes of the entry itself without
-    // following a reparse point.
-    let attrs = unsafe { GetFileAttributesW(PCWSTR(wide.as_ptr())) };
-    anyhow::ensure!(attrs != u32::MAX, "{} cannot be read", path.display());
+    // SAFETY: `wide` is NUL-terminated. Opens the entry itself (not what a reparse point
+    // names) with only the rights needed to read and change its security.
+    let dir = unsafe {
+        CreateFileW(
+            PCWSTR(wide.as_ptr()),
+            (READ_CONTROL | WRITE_DAC).0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            None,
+        )
+    }
+    .with_context(|| format!("opening {}", path.display()))?;
+    // SAFETY: `dir` was just returned by `CreateFileW`; closed via `Owned` when dropped.
+    let dir = unsafe { Owned::new(dir) };
+
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `dir` is a valid handle; `info` is a valid out-pointer.
+    unsafe { GetFileInformationByHandle(*dir, &mut info) }
+        .with_context(|| format!("reading {}", path.display()))?;
     anyhow::ensure!(
-        attrs & FILE_ATTRIBUTE_DIRECTORY.0 != 0,
+        info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0,
         "{} is not a directory",
         path.display()
     );
     anyhow::ensure!(
-        attrs & FILE_ATTRIBUTE_REPARSE_POINT.0 == 0,
+        info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 == 0,
         "{} is a reparse point",
         path.display()
     );
+
     let mut owner = PSID::default();
     let mut sd = PSECURITY_DESCRIPTOR::default();
-    // SAFETY: `wide` is NUL-terminated; the out-pointers are valid. `owner` points into
+    // SAFETY: `dir` is a valid handle; the out-pointers are valid. `owner` points into
     // `sd`, which is freed below only after the owner has been converted to a string.
     let err = unsafe {
-        GetNamedSecurityInfoW(
-            PCWSTR(wide.as_ptr()),
+        GetSecurityInfo(
+            *dir,
             SE_FILE_OBJECT,
             OWNER_SECURITY_INFORMATION,
             Some(&mut owner),
             None,
             None,
             None,
-            &mut sd,
+            Some(&mut sd),
         )
     };
-    err.ok().context("GetNamedSecurityInfoW")?;
+    err.ok().context("GetSecurityInfo")?;
     let owner = sid_to_string(owner);
-    // SAFETY: `sd` was allocated by `GetNamedSecurityInfoW`, which documents `LocalFree`.
+    // SAFETY: `sd` was allocated by `GetSecurityInfo`, which documents `LocalFree`.
     unsafe {
         let _ = LocalFree(Some(HLOCAL(sd.0)));
     }
@@ -190,7 +176,32 @@ fn check_trusted_dir(path: &Path) -> anyhow::Result<()> {
         "{} is owned by {owner}",
         path.display()
     );
-    Ok(())
+
+    // A trusted owner says nothing about who else was granted access (a directory made
+    // by an older install, or by an administrator, may let users write into it).
+    let wanted = SecurityDescriptor::from_sddl(sddl)?;
+    let mut present = windows::core::BOOL(0);
+    let mut defaulted = windows::core::BOOL(0);
+    let mut dacl: *mut ACL = std::ptr::null_mut();
+    // SAFETY: `wanted` holds a valid descriptor for the call; the out-pointers are valid,
+    // and `dacl` points into `wanted`, which outlives its use below.
+    unsafe { GetSecurityDescriptorDacl(wanted.sd, &mut present, &mut dacl, &mut defaulted) }
+        .context("GetSecurityDescriptorDacl")?;
+    anyhow::ensure!(present.as_bool() && !dacl.is_null(), "SDDL carries no DACL");
+    // SAFETY: `dir` is a valid handle with WRITE_DAC; `dacl` is valid (see above).
+    let err = unsafe {
+        SetSecurityInfo(
+            *dir,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            Some(dacl.cast_const()),
+            None,
+        )
+    };
+    err.ok()
+        .with_context(|| format!("resetting the DACL of {}", path.display()))
 }
 
 /// The Windows session this process itself is running in.

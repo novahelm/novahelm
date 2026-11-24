@@ -119,17 +119,28 @@ pub fn desktop_kind(name: &str) -> DesktopKind {
     }
 }
 
-/// Only the installed agent may drive the helper. Compared as strings, ignoring
-/// case and treating `/` like `\`, so Windows paths can be checked on any OS.
-pub fn caller_allowed(image: &Path, program_files: &Path) -> bool {
+/// Compared as strings, ignoring case and treating `/` like `\`, so Windows paths can
+/// be checked on any OS: is `image` exactly `<program_files>\NovaLink\<exe>`?
+fn is_installed_exe(image: &Path, program_files: &Path, exe: &str) -> bool {
     let norm = |p: &Path| p.to_string_lossy().replace('/', r"\").to_lowercase();
     let expected = format!(
-        r"{}\NovaLink\novalink-agent.exe",
+        r"{}\NovaLink\{exe}",
         program_files
             .to_string_lossy()
             .trim_end_matches(['\\', '/'])
     );
     norm(image) == norm(Path::new(&expected))
+}
+
+/// Only the installed agent may drive the helper.
+pub fn caller_allowed(image: &Path, program_files: &Path) -> bool {
+    is_installed_exe(image, program_files, "novalink-agent.exe")
+}
+
+/// Only the installed service's helper may be trusted with keystrokes: the agent checks
+/// the image of whatever process serves the helper pipe against this.
+pub fn service_image_allowed(image: &Path, program_files: &Path) -> bool {
+    is_installed_exe(image, program_files, "novalink-service.exe")
 }
 
 /// Which injector the agent should use. The helper is used only while it is up
@@ -248,6 +259,27 @@ mod tests {
         assert_eq!(desktop_kind("default"), DesktopKind::Normal);
         assert_eq!(desktop_kind("Winlogon"), DesktopKind::Protected);
         assert_eq!(desktop_kind("Screen-saver"), DesktopKind::Protected);
+    }
+
+    #[test]
+    fn service_image_allowed_only_program_files_service() {
+        let pf = Path::new(r"C:\Program Files\");
+        assert!(service_image_allowed(
+            Path::new(r"c:\program files\novalink\NovaLink-Service.exe"),
+            pf
+        ));
+        assert!(!service_image_allowed(
+            Path::new(r"C:\Program Files\NovaLink\novalink-agent.exe"),
+            pf
+        ));
+        assert!(!service_image_allowed(
+            Path::new(r"C:\Users\x\AppData\Local\NovaLink\novalink-service.exe"),
+            pf
+        ));
+        assert!(!service_image_allowed(
+            Path::new(r"C:\Program Files\NovaLink\novalink-service.exe.evil"),
+            pf
+        ));
     }
 
     #[test]
