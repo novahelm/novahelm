@@ -21,3 +21,4 @@ novalink-agent = { path = "../agent", features = ["fake"] }
 novalink-net = { path = "../net" }
 tokio.workspace = true
 axum.workspace = true
+socket2 = "0.6"
