@@ -93,6 +93,26 @@ pub fn open_logs() -> Result<(), String> {
     }
 }
 
+/// Starts the installed NovaLink-Setup.exe to offer the lock-screen service. Setup stops
+/// this tray and starts a new one when it is done, so it must outlive us.
+pub fn allow_lock_screen() -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    let fail = |why: String| os_failure_text("open NovaLink Setup", &why);
+    let exe = std::env::current_exe().map_err(|e| fail(e.to_string()))?;
+    let setup = exe.with_file_name("NovaLink-Setup.exe");
+    if !setup.is_file() {
+        return Err(fail(format!("{} is missing", setup.display())));
+    }
+    std::process::Command::new(&setup)
+        .arg("--protected-screens")
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .spawn()
+        .map(drop)
+        .map_err(|e| fail(e.to_string()))
+}
+
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "NovaLink";
 

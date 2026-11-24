@@ -10,7 +10,10 @@ pub enum ActionId {
     Pair(String),
     Accept(String),
     Reject(String),
-    Layout { peer: String, edge: Edge },
+    Layout {
+        peer: String,
+        edge: Edge,
+    },
     Unpair(String),
     RequestPermissions,
     OpenLogs,
@@ -18,6 +21,8 @@ pub enum ActionId {
     TurnOff,
     TurnOn,
     StartAtLogin,
+    /// Runs setup's offer to install the lock-screen service.
+    AllowLockScreen,
     Quit,
 }
 
@@ -62,6 +67,8 @@ pub enum UiState {
         discovered: Vec<Discovered>,
         checks: Vec<Check>,
         start_at_login: bool,
+        /// The lock-screen service isn't installed, so the menu offers it.
+        lock_screen_offer: bool,
     },
 }
 
@@ -147,7 +154,15 @@ pub fn menu(state: &UiState) -> Vec<Item> {
             discovered,
             checks,
             start_at_login,
-        } => up_menu(status, pending, discovered, checks, *start_at_login),
+            lock_screen_offer,
+        } => up_menu(
+            status,
+            pending,
+            discovered,
+            checks,
+            *start_at_login,
+            *lock_screen_offer,
+        ),
     }
 }
 
@@ -157,6 +172,7 @@ fn up_menu(
     discovered: &[Discovered],
     checks: &[Check],
     start_at_login: bool,
+    lock_screen_offer: bool,
 ) -> Vec<Item> {
     let mut items = Vec::new();
     for p in pending {
@@ -214,6 +230,13 @@ fn up_menu(
         text: "Start at login".into(),
         checked: start_at_login,
     });
+    if lock_screen_offer {
+        items.push(action(
+            ActionId::AllowLockScreen,
+            "Allow on lock screen…",
+            true,
+        ));
+    }
     items.push(Item::Separator);
     items.push(action(ActionId::TurnOff, "Turn Off NovaLink", true));
     items.push(quit());
@@ -512,6 +535,7 @@ mod tests {
             discovered: vec![],
             checks: vec![],
             start_at_login: false,
+            lock_screen_offer: false,
         }
     }
 
@@ -860,6 +884,28 @@ mod tests {
             assert!(ids.contains(&want), "{want:?}");
         }
         assert!(!ids.contains(&ActionId::RequestPermissions));
+    }
+
+    #[test]
+    fn lock_screen_item_shows_only_while_the_service_is_missing() {
+        let mut st = up(status(ME, vec![], vec![]), vec![]);
+        let mut ids = vec![];
+        find_actions(&menu(&st), &mut ids);
+        assert!(!ids.contains(&ActionId::AllowLockScreen));
+        if let UiState::Up {
+            lock_screen_offer, ..
+        } = &mut st
+        {
+            *lock_screen_offer = true;
+        }
+        let m = menu(&st);
+        let mut ids = vec![];
+        find_actions(&m, &mut ids);
+        assert!(ids.contains(&ActionId::AllowLockScreen));
+        assert!(
+            m.iter()
+                .any(|i| matches!(i, Item::Action { text, .. } if text == "Allow on lock screen…"))
+        );
     }
 
     #[test]

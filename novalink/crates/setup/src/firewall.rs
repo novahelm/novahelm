@@ -15,10 +15,14 @@ const MDNS_PORT: u16 = 5353;
 /// UDP ports only, on Private and Domain networks. The rule is left behind on uninstall:
 /// removing it needs admin again, and a rule for a missing program does nothing.
 pub fn script(exe: &str) -> String {
-    let p = exe.replace('\'', "''");
+    script_for(&format!("'{}'", exe.replace('\'', "''")))
+}
+
+/// `script` for a program named by a PowerShell expression (already quoted or computed).
+pub fn script_for(exe_expr: &str) -> String {
     format!(
         "$ErrorActionPreference = 'Stop'\n\
-         $p = '{p}'\n\
+         $p = {exe_expr}\n\
          Get-NetFirewallApplicationFilter -Program $p -ErrorAction SilentlyContinue | \
          Get-NetFirewallRule | Where-Object Direction -eq Inbound | Remove-NetFirewallRule\n\
          New-NetFirewallRule -DisplayName 'NovaLink' -Direction Inbound -Program $p \

@@ -733,7 +733,13 @@ async fn doctor(State(a): State<App>) -> ApiResult {
     let mut checks = Vec::new();
     let st = a.handle.status();
     let capturing = st.capture == CaptureState::Running;
+    let mut helper_up = None;
     for (name, ok) in a.handle.permissions() {
+        // Judged by its own check below, with its own advice.
+        if name == "protected_screens" {
+            helper_up = Some(ok);
+            continue;
+        }
         // macOS keeps answering "not granted" in a process started before the grant, but
         // the event tap only runs with both, so running capture settles it.
         let ok = ok || (capturing && matches!(name, "accessibility" | "input_monitoring"));
@@ -742,6 +748,14 @@ async fn doctor(State(a): State<App>) -> ApiResult {
             c.advice = permission_advice(name);
         }
         checks.push(c);
+    }
+    if let Some(up) = helper_up {
+        #[cfg(windows)]
+        let installed = crate::securecheck::service_installed();
+        #[cfg(not(windows))]
+        let installed = false;
+        let (ok, detail, advice) = crate::securecheck::protected_screens(up, installed);
+        checks.push(check("protected_screens", ok, detail, &advice));
     }
     checks.push(check(
         "capture",
@@ -808,6 +822,20 @@ async fn doctor(State(a): State<App>) -> ApiResult {
         .await
         .unwrap_or(None);
         checks.push(wake_on_lan_check(wake));
+        for (name, (ok, detail, advice)) in [
+            (
+                "uac_secure_desktop",
+                crate::securecheck::uac_secure_desktop(
+                    crate::securecheck::uac_secure_desktop_policy(),
+                ),
+            ),
+            (
+                "ctrl_alt_del",
+                crate::securecheck::ctrl_alt_del(crate::securecheck::ctrl_alt_del_policy()),
+            ),
+        ] {
+            checks.push(check(name, ok, detail, &advice));
+        }
     }
     checks.push(discovery_check(
         !st.peers.is_empty() || !a.handle.discovered().is_empty(),
@@ -1158,6 +1186,37 @@ mod tests {
             assert_eq!(c["ok"], true, "{c}");
             assert_eq!(c["advice"], "", "{c}");
         }
+    }
+
+    #[tokio::test]
+    async fn doctor_reports_protected_screens_once_with_its_own_advice() {
+        let (app, _h, fake) = app().await;
+        fake.set_permissions(vec![("accessibility", true), ("protected_screens", false)]);
+        let j = body_json(get(&app, "/v1/doctor", Some(TOKEN), HOST).await).await;
+        let found: Vec<_> = j["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["name"] == "protected_screens")
+            .collect();
+        assert_eq!(found.len(), 1, "{j}");
+        assert_eq!(found[0]["ok"], false);
+        assert_eq!(found[0]["detail"], "helper not running");
+        let advice = found[0]["advice"].as_str().unwrap();
+        assert!(!advice.contains("Grant the"), "{advice}");
+        assert!(advice.contains("Allow on lock screen"), "{advice}");
+        fake.set_permissions(vec![("protected_screens", true)]);
+        let j = body_json(get(&app, "/v1/doctor", Some(TOKEN), HOST).await).await;
+        let c = j["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "protected_screens")
+            .unwrap();
+        assert_eq!(
+            (c["ok"].as_bool(), c["detail"].as_str()),
+            (Some(true), Some("helper running"))
+        );
     }
 
     #[tokio::test]

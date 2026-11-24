@@ -1559,6 +1559,7 @@ dependencies = [
  "embed-resource",
  "novalink-agent",
  "novalink-client",
+ "sha2",
  "windows",
 ]
 

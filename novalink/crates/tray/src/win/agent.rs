@@ -70,7 +70,14 @@ impl Agent {
     }
 }
 
+/// The agent under Program Files once the lock-screen service is installed (the service's
+/// helper talks to that copy only), else the one next to the tray. Never both.
 fn agent_exe() -> Result<PathBuf, String> {
+    if novalink_agent::securecheck::service_installed()
+        && let Some(exe) = novalink_agent::securecheck::program_files_agent()
+    {
+        return Ok(exe);
+    }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let dir = exe.parent().ok_or("the tray has no folder")?;
     Ok(dir.join("novalink-agent.exe"))

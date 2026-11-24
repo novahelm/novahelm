@@ -27,12 +27,16 @@ pub enum Step {
     WriteUninstallEntry,
     /// Offers to add a Windows Firewall rule when none lets the agent in. Never fails.
     AllowFirewall,
+    /// Offers the lock-screen service (and the Program Files agent it needs). Never fails.
+    OfferProtectedScreens,
     LaunchTray,
     /// Deletes a "Turn Off" left behind by an earlier, uninstalled copy.
     ClearOffMarker,
     RemoveRunKey,
     RemoveShortcut,
     RemoveUninstallEntry,
+    /// Offers to remove the lock-screen service. Declining leaves it in place. Never fails.
+    RemoveProtectedScreens,
     RemoveFiles,
     KeepUserData,
 }
@@ -65,6 +69,7 @@ pub fn plan(current: &Installed, _payload_version: &str, mode: Mode) -> Vec<Step
                 CreateStartMenuShortcut,
                 WriteUninstallEntry,
                 AllowFirewall,
+                OfferProtectedScreens,
                 WriteVersion,
                 LaunchTray,
             ]);
@@ -77,6 +82,7 @@ pub fn plan(current: &Installed, _payload_version: &str, mode: Mode) -> Vec<Step
             RemoveRunKey,
             RemoveShortcut,
             RemoveUninstallEntry,
+            RemoveProtectedScreens,
             RemoveFiles,
             KeepUserData,
         ],
@@ -130,6 +136,7 @@ mod tests {
                 CreateStartMenuShortcut,
                 WriteUninstallEntry,
                 AllowFirewall,
+                OfferProtectedScreens,
                 WriteVersion,
                 LaunchTray
             ]
@@ -165,6 +172,7 @@ mod tests {
                 CreateStartMenuShortcut,
                 WriteUninstallEntry,
                 AllowFirewall,
+                OfferProtectedScreens,
                 WriteVersion,
                 LaunchTray
             ]
@@ -274,7 +282,12 @@ mod tests {
         );
         assert!(!p.iter().any(|s| matches!(
             s,
-            RemoveRunKey | RemoveShortcut | RemoveUninstallEntry | RemoveFiles | KeepUserData
+            RemoveRunKey
+                | RemoveShortcut
+                | RemoveUninstallEntry
+                | RemoveProtectedScreens
+                | RemoveFiles
+                | KeepUserData
         )));
     }
 
@@ -293,9 +306,29 @@ mod tests {
                 RemoveRunKey,
                 RemoveShortcut,
                 RemoveUninstallEntry,
+                RemoveProtectedScreens,
                 RemoveFiles,
                 KeepUserData
             ]
         );
+    }
+
+    #[test]
+    fn plan_offers_protected_screens_after_the_firewall_and_before_the_version() {
+        let p = plan(&installed(false, None, false), "0.1.0", Mode::Install);
+        let at = |s| p.iter().position(|x| *x == s).unwrap();
+        assert_eq!(at(OfferProtectedScreens), at(AllowFirewall) + 1);
+        assert!(at(OfferProtectedScreens) < at(WriteVersion));
+    }
+
+    #[test]
+    fn plan_removes_protected_screens_before_the_files() {
+        let p = plan(
+            &installed(true, Some("0.1.0"), false),
+            "0.1.0",
+            Mode::Uninstall,
+        );
+        let at = |s| p.iter().position(|x| *x == s).unwrap();
+        assert!(at(RemoveProtectedScreens) < at(RemoveFiles));
     }
 }
