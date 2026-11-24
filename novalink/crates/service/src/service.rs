@@ -346,9 +346,13 @@ fn spawn_helper(session: u32, job: HANDLE) -> anyhow::Result<Owned<HANDLE>> {
         return Err(anyhow::Error::new(e).context("AssignProcessToJobObject"));
     }
     // SAFETY: `thread` is the valid, suspended initial thread of the new process.
-    anyhow::ensure!(
-        unsafe { ResumeThread(*thread) } != u32::MAX,
-        "ResumeThread failed"
-    );
+    if unsafe { ResumeThread(*thread) } == u32::MAX {
+        let e = std::io::Error::last_os_error();
+        // SAFETY: `process` is valid; never leave a suspended helper behind.
+        unsafe {
+            let _ = TerminateProcess(*process, 1);
+        }
+        return Err(anyhow::Error::new(e).context("ResumeThread"));
+    }
     Ok(process)
 }

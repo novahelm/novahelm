@@ -255,12 +255,9 @@ impl OncePerVisit {
 #[cfg(windows)]
 mod pipe {
     use super::*;
-    use crate::secure::{
-        FrameReader, HELPER_PROTO, encode, helper_pipe_name, service_image_allowed,
-    };
+    use crate::secure::{FrameReader, HELPER_PROTO, encode, helper_pipe_name};
     use anyhow::Context;
     use std::os::windows::io::AsRawHandle;
-    use std::path::PathBuf;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
@@ -269,20 +266,13 @@ mod pipe {
     use windows::Win32::Security::{
         IsWellKnownSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, WinLocalSystemSid,
     };
-    use windows::Win32::System::Com::CoTaskMemFree;
-    use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
+    use windows::Win32::System::Pipes::GetNamedPipeServerSessionId;
     use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
     use windows::Win32::System::StationsAndDesktops::{
         CloseDesktop, DESKTOP_READOBJECTS, OpenInputDesktop,
     };
-    use windows::Win32::System::Threading::{
-        GetCurrentProcessId, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-        QueryFullProcessImageNameW,
-    };
-    use windows::Win32::UI::Shell::{
-        FOLDERID_ProgramFiles, KNOWN_FOLDER_FLAG, SHGetKnownFolderPath,
-    };
-    use windows::core::{HRESULT, Owned, PWSTR};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::core::HRESULT;
 
     /// How often to look for a helper, and so how long a gap between pipe attempts.
     const RETRY: Duration = Duration::from_secs(2);
@@ -329,10 +319,12 @@ mod pipe {
     }
 
     async fn run(shared: Arc<Shared>, name: String, session: u32) {
-        // Each is reported once per protected visit: reset when the helper really comes
-        // up or the desktop is back to normal, never merely because the pipe opened.
+        // Reported once per protected visit: reset when the helper really comes up or the
+        // desktop is back to normal, never merely because the pipe opened.
         let mut missing = OncePerVisit::default();
-        let mut rejected = OncePerVisit::default();
+        // Why the server was last turned away, so a persistent rejection is logged once
+        // per reason per run, however often the pipe is retried.
+        let mut rejected: Option<String> = None;
         while !shared.stopped() {
             match ClientOptions::new().open(&name) {
                 Ok(client) => match verify_server(&client, session) {
@@ -343,13 +335,15 @@ mod pipe {
                         }
                         if spoke {
                             missing.reset();
-                            rejected.reset();
+                            rejected = None;
                         }
                     }
                     Err(e) => {
                         // Dropping `client` closes the pipe before anything was sent.
-                        if rejected.first() {
-                            tracing::warn!(error = %e, "not using the helper pipe: its server is not the NovaLink service");
+                        let why = e.to_string();
+                        if rejected.as_deref() != Some(why.as_str()) {
+                            tracing::warn!(error = %why, "not using the helper pipe: its server is not the NovaLink service");
+                            rejected = Some(why);
                         }
                     }
                 },
@@ -361,7 +355,6 @@ mod pipe {
                 }
                 if shared.is_up() || !input_desktop_denied() {
                     missing.reset();
-                    rejected.reset();
                 } else if missing.first() {
                     tracing::warn!("protected screen, helper not running");
                 }
@@ -370,53 +363,31 @@ mod pipe {
         }
     }
 
-    /// Confirms the process serving `client`'s pipe is the installed NovaLink service
-    /// running in this session, before anything (a PIN, say) is sent to it. The helper
-    /// creates its pipe only after sign-in, so another process could otherwise get there
-    /// first and impersonate it.
+    /// Confirms the pipe's server is a SYSTEM process in this session, before anything
+    /// (a PIN, say) is sent to it. The helper creates its pipe only after sign-in, so
+    /// another process could otherwise get there first and impersonate it.
+    ///
+    /// The check is the pipe's owner plus the session the server runs in, both read from
+    /// the connected handle. Only SYSTEM can make a SYSTEM-owned pipe, and any SYSTEM
+    /// process is already fully trusted, so no more is needed; the server's own process
+    /// is deliberately not opened, as an ordinary user cannot open a SYSTEM process.
+    /// Any failure rejects the server.
     fn verify_server(client: &NamedPipeClient, session: u32) -> anyhow::Result<()> {
-        let mut pid = 0u32;
-        // SAFETY: the pipe handle is valid for the call; `pid` is a valid out-pointer.
-        unsafe { GetNamedPipeServerProcessId(HANDLE(client.as_raw_handle()), &mut pid) }
-            .context("GetNamedPipeServerProcessId")?;
-        // SAFETY: closed via `Owned` when it drops.
-        let proc = unsafe {
-            Owned::new(
-                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-                    .context("OpenProcess on the pipe server")?,
-            )
-        };
-
+        let pipe = HANDLE(client.as_raw_handle());
         let mut server_session = 0u32;
-        // SAFETY: valid out-pointer.
-        unsafe { ProcessIdToSessionId(pid, &mut server_session) }
-            .context("ProcessIdToSessionId on the pipe server")?;
+        // SAFETY: `pipe` is this process's own connected pipe handle; valid out-pointer.
+        unsafe { GetNamedPipeServerSessionId(pipe, &mut server_session) }
+            .context("GetNamedPipeServerSessionId")?;
         anyhow::ensure!(
             server_session == session,
             "pipe server runs in session {server_session}, not {session}"
         );
-
-        let mut buf = [0u16; 1024];
-        let mut len = buf.len() as u32;
-        // SAFETY: `buf` outlives the call; `len` starts as its capacity in characters.
-        unsafe {
-            QueryFullProcessImageNameW(*proc, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len)
-        }
-        .context("QueryFullProcessImageNameW on the pipe server")?;
-        let image = PathBuf::from(String::from_utf16_lossy(&buf[..len as usize]));
-        let program_files = program_files()?;
-        anyhow::ensure!(
-            service_image_allowed(&image, &program_files),
-            "pipe server is {}",
-            image.display()
-        );
-
-        ensure_pipe_owned_by_system(HANDLE(client.as_raw_handle()))
+        ensure_pipe_owned_by_system(pipe)
     }
 
     /// The pipe object itself must be owned by LocalSystem. The helper creates its pipe
     /// with `O:SY`, and an ordinary user cannot make an object owned by SYSTEM, so a
-    /// squatter cannot pass this however it names or places its executable. Read from
+    /// squatter cannot pass this. Read from
     /// the connected handle (not by name), so it is the very pipe we are about to use.
     /// Any failure to read it rejects the server.
     fn ensure_pipe_owned_by_system(pipe: HANDLE) -> anyhow::Result<()> {
@@ -447,18 +418,6 @@ mod pipe {
         }
         anyhow::ensure!(system, "the pipe is not owned by LocalSystem");
         Ok(())
-    }
-
-    fn program_files() -> anyhow::Result<PathBuf> {
-        // SAFETY: the returned string is freed with `CoTaskMemFree` below.
-        let raw =
-            unsafe { SHGetKnownFolderPath(&FOLDERID_ProgramFiles, KNOWN_FOLDER_FLAG(0), None) }
-                .context("SHGetKnownFolderPath")?;
-        // SAFETY: `raw` is non-null and NUL-terminated per the call succeeding.
-        let s = unsafe { raw.to_string() }.context("Program Files path was not valid UTF-16");
-        // SAFETY: `raw` was allocated by `SHGetKnownFolderPath`.
-        unsafe { CoTaskMemFree(Some(raw.0.cast())) };
-        Ok(PathBuf::from(s?))
     }
 
     /// True when this process may not open the desktop that has input, which is what
