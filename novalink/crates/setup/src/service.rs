@@ -24,14 +24,15 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Setup has nothing to offer when the installed copy is this version and the service is
-/// registered. version.txt is written last by the install script, so it marks a finished one.
+/// Setup has nothing to offer when the installed copy is this build (`securecheck::build_id`)
+/// and the service is registered. version.txt is written last by the install script, so it
+/// marks a finished one.
 pub fn up_to_date(
-    installed_version: Option<&str>,
-    payload_version: &str,
+    installed_build: Option<&str>,
+    payload_build: &str,
     service_exists: bool,
 ) -> bool {
-    service_exists && installed_version.is_some_and(|v| v.trim() == payload_version)
+    service_exists && installed_build.is_some_and(|v| v.trim() == payload_build)
 }
 
 fn quote(s: &str) -> String {

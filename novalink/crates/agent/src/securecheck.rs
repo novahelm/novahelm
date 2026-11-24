@@ -5,13 +5,22 @@
 pub const SERVICE_NAME: &str = "NovaLinkService";
 
 /// Whether the agent under Program Files is the one to run: the service must exist and the
-/// installed copy must be this version, so a declined upgrade still runs the new code.
+/// installed copy must be this build, so a declined upgrade still runs the new code.
 pub fn use_program_files_agent(
     service_exists: bool,
-    pf_version: Option<&str>,
-    own_version: &str,
+    pf_build: Option<&str>,
+    own_build: &str,
 ) -> bool {
-    service_exists && pf_version.is_some_and(|v| v.trim() == own_version)
+    service_exists && pf_build.is_some_and(|v| v.trim() == own_build)
+}
+
+/// What `version.txt` under Program Files holds: the version and a fingerprint of the
+/// agent, so a rebuild that keeps the version number still counts as a different copy.
+pub fn build_id(version: &str, agent_exe: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(agent_exe);
+    let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+    format!("{version}+{hex}")
 }
 
 /// Whether the SYSTEM helper is up, and whether the service that starts it is installed.
@@ -71,7 +80,7 @@ pub fn ctrl_alt_del(disable_cad: Option<u32>) -> (bool, String, String) {
 #[cfg(windows)]
 pub use reg::{
     ctrl_alt_del_policy, program_files_agent, program_files_agent_in_use, service_installed,
-    uac_secure_desktop_policy,
+    sibling_build_id, uac_secure_desktop_policy,
 };
 
 #[cfg(windows)]
@@ -152,12 +161,26 @@ mod reg {
         })
     }
 
-    /// The Program Files agent when it is the one to run for a program of `own_version`.
-    pub fn program_files_agent_in_use(own_version: &str) -> Option<PathBuf> {
+    /// The Program Files agent when it is the one to run for a program of build `own_build`.
+    pub fn program_files_agent_in_use(own_build: &str) -> Option<PathBuf> {
         let exe = program_files_agent()?;
-        let version = std::fs::read_to_string(exe.with_file_name("version.txt")).ok();
-        super::use_program_files_agent(service_installed(), version.as_deref(), own_version)
+        let build = std::fs::read_to_string(exe.with_file_name("version.txt")).ok();
+        super::use_program_files_agent(service_installed(), build.as_deref(), own_build)
             .then_some(exe)
+    }
+
+    /// The build id of the agent next to this program, worked out once: setup stops the
+    /// tray before it replaces that file.
+    pub fn sibling_build_id() -> Option<&'static str> {
+        static ID: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+        ID.get_or_init(|| {
+            let exe = std::env::current_exe()
+                .ok()?
+                .with_file_name("novalink-agent.exe");
+            let bytes = std::fs::read(exe).ok()?;
+            Some(super::build_id(env!("CARGO_PKG_VERSION"), &bytes))
+        })
+        .as_deref()
     }
 
     /// `%ProgramFiles%\NovaLink\novalink-agent.exe` when that file exists.
@@ -172,6 +195,18 @@ mod reg {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_id_tells_rebuilds_of_one_version_apart() {
+        let a = build_id("0.1.0", b"first build");
+        assert!(
+            a.starts_with("0.1.0+") && a.len() == "0.1.0+".len() + 16,
+            "{a}"
+        );
+        assert_eq!(a, build_id("0.1.0", b"first build"));
+        assert_ne!(a, build_id("0.1.0", b"second build"));
+        assert!(!use_program_files_agent(true, Some("0.1.0"), &a));
+    }
 
     #[test]
     fn program_files_agent_needs_service_and_matching_version() {

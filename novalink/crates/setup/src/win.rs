@@ -662,7 +662,7 @@ fn installed_text() -> String {
 /// The agent exe NovaLink runs: the Program Files one once the service is installed and up
 /// to date, else the per-user copy.
 fn running_agent_exe(dir: &Path) -> PathBuf {
-    securecheck::program_files_agent_in_use(VERSION).unwrap_or_else(|| dir.join(AGENT_EXE))
+    securecheck::program_files_agent_in_use(build_id()).unwrap_or_else(|| dir.join(AGENT_EXE))
 }
 
 /// Asks to let the agent through Windows Firewall when nothing does yet, then adds the rule
@@ -726,14 +726,21 @@ fn program_files_dir() -> Result<PathBuf, String> {
     Ok(env_path("ProgramFiles")?.join("NovaLink"))
 }
 
-/// True unless the installed Program Files copy is this version and the service exists.
+/// What this setup writes to version.txt under Program Files: the version and a fingerprint
+/// of the agent it carries, so a rebuild with the same version still replaces that copy.
+fn build_id() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| securecheck::build_id(VERSION, payload::AGENT))
+}
+
+/// True unless the installed Program Files copy is this build and the service exists.
 fn protected_screens_needed() -> bool {
     let installed = program_files_dir()
         .ok()
         .and_then(|d| std::fs::read_to_string(d.join("version.txt")).ok());
     !service::up_to_date(
         installed.as_deref(),
-        VERSION,
+        build_id(),
         securecheck::service_installed(),
     )
 }
@@ -766,7 +773,7 @@ fn install_protected_screens() -> bool {
     let result = stage_service_payload().map_err(Some).and_then(|dir| {
         let script = service::install_script(
             &dir.to_string_lossy(),
-            VERSION,
+            build_id(),
             &service::sha256_hex(payload::SERVICE),
             &service::sha256_hex(payload::AGENT),
         );

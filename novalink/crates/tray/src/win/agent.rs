@@ -73,8 +73,8 @@ impl Agent {
 /// The agent under Program Files once the lock-screen service is installed and up to date
 /// (the service's helper talks to that copy only), else the one next to the tray. Never both.
 fn agent_exe() -> Result<PathBuf, String> {
-    if let Some(exe) =
-        novalink_agent::securecheck::program_files_agent_in_use(env!("CARGO_PKG_VERSION"))
+    if let Some(exe) = novalink_agent::securecheck::sibling_build_id()
+        .and_then(novalink_agent::securecheck::program_files_agent_in_use)
     {
         return Ok(exe);
     }
