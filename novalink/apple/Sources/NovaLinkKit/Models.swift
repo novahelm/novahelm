@@ -92,16 +92,44 @@ public struct Peer: Codable, Sendable, Equatable {
     /// How the connection runs, e.g. "Ethernet".
     public var path: String
     public var dryInject: Bool?
+    /// The Mac is sending Wake-on-LAN to this sleeping peer. Absent from older agents.
+    public var waking: Bool?
+    /// The Mac woke this peer and gave up waiting. Absent from older agents.
+    public var wakeFailed: Bool?
+    /// The agent knows this peer's MAC addresses, so it can wake it. Absent from older agents.
+    public var canWake: Bool?
+    /// The peer's screen is at the sign-in screen. Absent until the agent reports it.
+    public var signedOut: Bool?
 
-    public init(id: String, name: String, connected: Bool, rttUs: UInt64?, path: String, dryInject: Bool?) {
+    public init(id: String, name: String, connected: Bool, rttUs: UInt64?, path: String, dryInject: Bool?,
+                waking: Bool? = nil, wakeFailed: Bool? = nil, canWake: Bool? = nil, signedOut: Bool? = nil) {
         self.id = id; self.name = name; self.connected = connected
         self.rttUs = rttUs; self.path = path; self.dryInject = dryInject
+        self.waking = waking; self.wakeFailed = wakeFailed; self.canWake = canWake
+        self.signedOut = signedOut
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, connected, path
+        case id, name, connected, path, waking
         case rttUs = "rtt_us"
         case dryInject = "dry_inject"
+        case wakeFailed = "wake_failed"
+        case canWake = "can_wake"
+        case signedOut = "signed_out"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        connected = try c.decode(Bool.self, forKey: .connected)
+        rttUs = try c.decodeIfPresent(UInt64.self, forKey: .rttUs)
+        path = try c.decode(String.self, forKey: .path)
+        dryInject = try c.decodeIfPresent(Bool.self, forKey: .dryInject)
+        waking = try? c.decodeIfPresent(Bool.self, forKey: .waking)
+        wakeFailed = try? c.decodeIfPresent(Bool.self, forKey: .wakeFailed)
+        canWake = try? c.decodeIfPresent(Bool.self, forKey: .canWake)
+        signedOut = try? c.decodeIfPresent(Bool.self, forKey: .signedOut)
     }
 }
 

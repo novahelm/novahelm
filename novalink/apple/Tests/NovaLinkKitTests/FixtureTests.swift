@@ -12,6 +12,20 @@ import Testing
         #expect(s.layout.links[0].from == s.me && s.layout.links[0].to == s.peers[0].id)
         #expect(s.captureState == .running)
         #expect(s.settings == AgentSettings(swapCtrlCmd: false))
+        #expect(s.peers[0].waking == false && s.peers[0].wakeFailed == false && s.peers[0].canWake == false)
+        #expect(s.peers[0].signedOut == nil)
+    }
+
+    @Test func peerWithoutWakeKeysDecodesToNil() throws {
+        let json = #"{"id":"b","name":"b","connected":false,"path":"","rtt_us":null}"#
+        let p = try JSONDecoder().decode(Peer.self, from: Data(json.utf8))
+        #expect(p.waking == nil && p.wakeFailed == nil && p.canWake == nil && p.signedOut == nil)
+    }
+
+    @Test func peerWakeAndSignedOutKeysDecode() throws {
+        let json = #"{"id":"b","name":"b","connected":false,"path":"","waking":true,"wake_failed":true,"can_wake":true,"signed_out":true}"#
+        let p = try JSONDecoder().decode(Peer.self, from: Data(json.utf8))
+        #expect(p.waking == true && p.wakeFailed == true && p.canWake == true && p.signedOut == true)
     }
 
     @Test func pendingPairs() throws {

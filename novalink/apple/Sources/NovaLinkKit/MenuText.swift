@@ -10,6 +10,16 @@ public enum MenuText {
         return "\(name) is in control"
     }
 
+    /// The secondary line under a peer while the Mac is waking it, or after the wake failed.
+    public static func wakeNote(_ p: Peer, name: String? = nil) -> String? {
+        let name = name ?? p.name
+        if p.waking == true { return "Waking \(name)…" }
+        if p.wakeFailed == true {
+            return "\(name) didn't wake. Check that it's plugged into the network and that Wake-on-LAN is on (run novalink doctor on the PC)."
+        }
+        return nil
+    }
+
     /// The first 8 hex characters of an id: enough to tell two devices apart.
     public static func shortId(_ id: String) -> String { String(id.prefix(8)) }
 
