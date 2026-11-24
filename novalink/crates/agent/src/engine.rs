@@ -332,7 +332,7 @@ impl Core {
             }
         }
         self.rec(json!({"kind":"release","why":why,"count":evs.len()}));
-        if why != "leave" && why != "settings" {
+        if why != "leave" && why != "settings" && why != "desktop_switch" {
             self.safety_releases += 1;
             self.release_log.push(Instant::now(), ());
             tracing::warn!(why, count = evs.len(), "safety release");
@@ -827,6 +827,10 @@ impl Core {
                     held_after_settle: after,
                 },
             );
+        }
+        if self.platform.take_desktop_switch() {
+            self.rec(json!({"kind":"desktop_switch"}));
+            self.release("desktop_switch");
         }
         if now.saturating_duration_since(self.last_health) >= HEALTH_POLL {
             self.last_health = now;

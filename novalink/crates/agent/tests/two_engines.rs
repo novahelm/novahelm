@@ -619,6 +619,24 @@ mod channels {
 }
 
 #[tokio::test]
+async fn desktop_switch_releases_without_safety_count() {
+    let (a, pa, b, pb) = two_engines().await;
+    pa.push_physical_motion_to((1919.5, 540.));
+    wait_until(|| a.status().focus == b.status().me).await;
+    pa.push_physical_key(keys::LEFT_GUI, true);
+    pa.push_physical_key(keys::L, true);
+    wait_until(|| pb.held_now().len() == 2).await;
+    pb.push_desktop_switch();
+    wait_until(|| pb.held_now().is_empty()).await;
+    assert_eq!(b.metrics().safety_releases, 0);
+    assert!(
+        b.recent_events(50)
+            .iter()
+            .any(|e| e["kind"] == "desktop_switch")
+    );
+}
+
+#[tokio::test]
 async fn pushing_into_a_sleeping_peer_wakes_it_and_crosses_when_it_returns() {
     let mut w = WakePair::new().await;
     let b_id = w.b_id();
