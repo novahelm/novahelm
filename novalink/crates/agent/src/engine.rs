@@ -7,11 +7,12 @@
 
 use crate::recorder::{FlightRecorder, write_records};
 use crate::settings::{Settings, swap_ctrl_cmd};
+use crate::wake::Waker;
 use anyhow::Result;
 use novalink_core::time::mono_us;
 use novalink_core::{
     Action, ControlState, HeldInputs, InputEvent, LatencyStats, Layout, LocalEvent, Percentiles,
-    Platform, Window, entry_position, hit_edge,
+    Platform, WakeTracker, Window, entry_position, hit_edge,
 };
 use novalink_net::manager::{Manager, ManagerConfig, ManagerEvent, PeerStatus, Timings};
 use novalink_proto::{Control, Datagram, DeviceId, DisplayInfo, Edge, EntryPoint};
@@ -77,7 +78,17 @@ pub struct EngineOpts {
     pub settings: Settings,
     /// Where changed settings are saved.
     pub settings_path: PathBuf,
+    pub waker: Arc<dyn Waker>,
+    /// How long a wake keeps trying before it is reported failed.
+    pub wake_deadline: Duration,
+    /// Minimum time between wake bursts for one peer.
+    pub wake_gap: Duration,
+    /// This machine's wired MACs, sent to peers as `WakeInfo` on every connect.
+    pub advertise_macs: Vec<[u8; 6]>,
 }
+
+/// Wake addresses kept per peer; the message itself has no cap.
+const MAX_WAKE_MACS: usize = 8;
 
 /// Whether this machine's own keyboard and mouse are being read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -185,6 +196,9 @@ struct Core {
     /// Counts sessions per peer; a new number means a new session.
     session_gen: HashMap<DeviceId, u64>,
     connected_at: HashMap<DeviceId, Instant>,
+    waker: Arc<dyn Waker>,
+    wake: WakeTracker,
+    advertise_macs: Vec<[u8; 6]>,
 }
 
 /// How long after a `Leave` the held set is checked again.
@@ -397,9 +411,10 @@ impl Core {
         let Some((edge, frac)) = hit_edge(&self.my_displays, self.platform.cursor_pos()) else {
             return;
         };
-        if let Some(n) = self.layout.neighbor(self.me, edge)
-            && self.connected.contains(&n)
-        {
+        let Some(n) = self.layout.neighbor(self.me, edge) else {
+            return;
+        };
+        if self.connected.contains(&n) {
             self.cross(
                 n,
                 EntryPoint {
@@ -407,7 +422,20 @@ impl Core {
                     frac,
                 },
             );
+        } else {
+            self.wake_peer(n, edge);
         }
+    }
+
+    /// The pointer pushes against the edge of a peer that is not connected: wake it if we
+    /// know how, at most one burst per gap.
+    fn wake_peer(&mut self, peer: DeviceId, edge: Edge) {
+        let macs = self.manager.wake_macs(peer);
+        if macs.is_empty() || !self.wake.on_edge(peer, edge, Instant::now()) {
+            return;
+        }
+        self.rec(json!({"kind":"wake_sent","peer":short(&peer)}));
+        self.waker.wake(macs);
     }
 
     /// Our own injection moved the cursor; when driven by a remote controller and it
@@ -587,6 +615,25 @@ impl Core {
             };
             self.to(peer, c);
         }
+        if !self.advertise_macs.is_empty() {
+            let macs = self.advertise_macs.clone();
+            self.to(peer, Control::WakeInfo { macs });
+        }
+        // The pointer may still be pushing against the edge of a peer we woke.
+        if let Some(edge) = self.wake.on_connected(peer)
+            && let Some((hit, frac)) = hit_edge(&self.my_displays, self.platform.cursor_pos())
+            && hit == edge
+            && self.layout.neighbor(self.me, edge) == Some(peer)
+        {
+            self.rec(json!({"kind":"wake_cross","peer":short(&peer)}));
+            self.cross(
+                peer,
+                EntryPoint {
+                    edge: edge.opposite(),
+                    frac,
+                },
+            );
+        }
     }
 
     fn on_lost(&mut self, peer: DeviceId) {
@@ -684,6 +731,10 @@ impl Core {
             Control::Displays(d) => {
                 self.peer_displays.insert(peer, d);
             }
+            Control::WakeInfo { mut macs } => {
+                macs.truncate(MAX_WAKE_MACS);
+                self.manager.set_wake_macs(peer, macs);
+            }
             Control::Layout { version, links } => {
                 if self.layout.merge(version, links) {
                     self.rec(json!({"kind":"layout","version":version}));
@@ -744,6 +795,9 @@ impl Core {
             }
         }
         let now = Instant::now();
+        for peer in self.wake.on_tick(now) {
+            self.rec(json!({"kind":"wake_failed","peer":short(&peer)}));
+        }
         self.reconnect_log.prune(now, RECONNECT_WINDOW);
         self.release_log.prune(now, RELEASE_WINDOW);
         for (id, s) in &self.stats {
@@ -820,6 +874,9 @@ impl Core {
         let mut peers = self.manager.peers();
         for p in &mut peers {
             p.dry_inject = self.peer_dry.get(&p.id).copied();
+            p.waking = self.wake.waking(p.id);
+            p.wake_failed = self.wake.failed(p.id);
+            p.can_wake = !self.manager.wake_macs(p.id).is_empty();
         }
         Status {
             me: self.me,
@@ -990,6 +1047,9 @@ impl Engine {
             peer_dry: HashMap::new(),
             session_gen: HashMap::new(),
             connected_at: HashMap::new(),
+            waker: opts.waker,
+            wake: WakeTracker::new(opts.wake_deadline, opts.wake_gap),
+            advertise_macs: opts.advertise_macs,
         }));
         lock(&core).try_capture();
         let (cmd, mut cmd_rx) = mpsc::unbounded_channel();

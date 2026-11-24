@@ -3,6 +3,7 @@ use clap::Parser;
 use novalink_agent::engine::{Engine, EngineOpts};
 use novalink_agent::settings::Settings;
 use novalink_agent::{api, channels};
+use novalink_agent::wake::NetWaker;
 use novalink_agent::{logging, paths};
 use novalink_core::Platform;
 use novalink_net::identity::{Identity, KeyringStore};
@@ -133,6 +134,11 @@ async fn main() -> Result<()> {
         log_dir: paths::log_dir(),
         settings: Settings::load(&settings_path),
         settings_path,
+        waker: Arc::new(NetWaker),
+        wake_deadline: Duration::from_secs(20),
+        wake_gap: Duration::from_secs(5),
+        // Until the Windows side reads its wired MACs, nothing is advertised.
+        advertise_macs: vec![],
     };
     let engine = Engine::start(real_platform()?, cfg, opts).await?;
     tracing::info!(id = %engine.status().me, "running");

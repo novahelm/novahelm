@@ -147,6 +147,12 @@ pub struct PeerStatus {
     pub last_close: Option<CloseReason>,
     /// Whether the peer's agent reported `--dry-inject` (filled in by the engine).
     pub dry_inject: Option<bool>,
+    /// A wake-on-LAN burst is going out for this peer (filled in by the engine).
+    pub waking: bool,
+    /// The last wake gave up without the peer connecting (filled in by the engine).
+    pub wake_failed: bool,
+    /// We hold wake addresses for the peer (filled in by the engine).
+    pub can_wake: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -430,6 +436,9 @@ impl Manager {
                     reconnects: stat.map(|s| s.reconnects).unwrap_or(0),
                     last_close: stat.and_then(|s| s.last_close.clone()),
                     dry_inject: None,
+                    waking: false,
+                    wake_failed: false,
+                    can_wake: false,
                 }
             })
             .collect()

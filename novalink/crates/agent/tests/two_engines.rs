@@ -1,6 +1,6 @@
 #![cfg(feature = "fake")]
 use novalink_agent::settings::Settings;
-use novalink_agent::testutil::{two_engines, wait_until, wait_until_within};
+use novalink_agent::testutil::{WakePair, two_engines, wait_until, wait_until_within};
 use novalink_core::InputEvent;
 use novalink_proto::{Control, DisplayInfo, Edge, EntryPoint, keys};
 use std::time::Duration;
@@ -616,4 +616,43 @@ mod channels {
         // The hello does not buy a second 5 s: both lines share one limit.
         assert!(started.elapsed() < std::time::Duration::from_millis(6500));
     }
+}
+
+#[tokio::test]
+async fn pushing_into_a_sleeping_peer_wakes_it_and_crosses_when_it_returns() {
+    let mut w = WakePair::new().await;
+    let b_id = w.b_id();
+    wait_until(|| w.a.status().peers.iter().any(|p| p.can_wake)).await;
+    w.stop_b().await;
+    wait_until(|| w.a.status().peers.iter().all(|p| !p.connected)).await;
+    w.pa.push_physical_motion_to((1919.5, 540.));
+    wait_until(|| w.waker.sent() == vec![vec![[2, 0, 0, 0, 0, 0xb]]]).await;
+    assert!(w.a.status().peers[0].waking);
+    w.start_b().await;
+    wait_until(|| w.a.status().focus == b_id).await;
+}
+
+#[tokio::test]
+async fn returning_peer_does_not_steal_the_pointer_after_it_moved_away() {
+    let mut w = WakePair::new().await;
+    w.stop_b().await;
+    w.pa.push_physical_motion_to((1919.5, 540.));
+    wait_until(|| !w.waker.sent().is_empty()).await;
+    w.pa.push_physical_motion_to((900., 540.));
+    w.start_b().await;
+    wait_until(|| w.a.status().peers.iter().all(|p| p.connected && !p.waking)).await;
+    assert_eq!(w.a.status().focus, w.a.status().me);
+}
+
+#[tokio::test]
+async fn wake_fails_after_the_deadline() {
+    let mut w = WakePair::new().await;
+    w.stop_b().await;
+    w.pa.push_physical_motion_to((1919.5, 540.));
+    wait_until_within(Duration::from_secs(5), || w.a.status().peers[0].wake_failed).await;
+    assert!(
+        w.a.recent_events(50)
+            .iter()
+            .any(|e| e["kind"] == "wake_failed")
+    );
 }
