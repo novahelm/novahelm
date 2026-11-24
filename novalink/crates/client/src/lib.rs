@@ -24,12 +24,17 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(750);
 /// Pairing waits for the session to come up, and each dead address costs a dial timeout.
 const PAIR_TIMEOUT: Duration = Duration::from_secs(10);
+/// On Windows the doctor asks PowerShell and powercfg about the network adapter's wake settings, each allowed 5 s,
+/// after the network and firewall probe. A cold PowerShell alone can take longer than [`TIMEOUT`].
+const DOCTOR_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long a request may take. Starting a pairing waits for the session to come up, so
 /// it gets longer whoever sends it (the tray, or the CLI through [`Client::request`]).
 fn timeout_for(method: &Method, path: &str) -> Duration {
     if *method == Method::POST && path == "/v1/pair" {
         PAIR_TIMEOUT
+    } else if *method == Method::GET && path == "/v1/doctor" {
+        DOCTOR_TIMEOUT
     } else {
         TIMEOUT
     }
@@ -366,5 +371,6 @@ mod tests {
         assert_eq!(timeout_for(&Method::POST, "/v1/pair/answer"), TIMEOUT);
         assert_eq!(timeout_for(&Method::GET, "/v1/pair/pending"), TIMEOUT);
         assert_eq!(timeout_for(&Method::GET, "/v1/status"), TIMEOUT);
+        assert_eq!(timeout_for(&Method::GET, "/v1/doctor"), DOCTOR_TIMEOUT);
     }
 }
