@@ -1,4 +1,4 @@
-use crate::{capture, displays, inject, pointer};
+use crate::{capture, cursorwatch, displays, inject, pointer};
 use novalink_core::{InputEvent, LocalEvent, Platform};
 use novalink_proto::DisplayInfo;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +15,7 @@ pub struct WinPlatform {
     injector: inject::Injector,
     capturing: AtomicBool,
     pointer: pointer::ForcedPointer,
+    cursor_watch: cursorwatch::CursorWatcher,
 }
 
 impl WinPlatform {
@@ -30,6 +31,7 @@ impl WinPlatform {
             injector: inject::Injector::default(),
             capturing: AtomicBool::new(false),
             pointer: pointer::ForcedPointer::default(),
+            cursor_watch: cursorwatch::CursorWatcher::default(),
         })
     }
 
@@ -136,6 +138,7 @@ impl Platform for WinPlatform {
 
     fn set_remote_pointer(&self, on: bool) {
         self.pointer.set(on);
+        self.cursor_watch.set(on);
     }
 
     fn permissions(&self) -> Vec<(&'static str, bool)> {
