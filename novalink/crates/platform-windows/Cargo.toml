@@ -8,6 +8,9 @@ publish.workspace = true
 novalink-core = { path = "../core" }
 novalink-proto = { path = "../proto" }
 anyhow.workspace = true
+serde.workspace = true
+postcard.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 

@@ -2,11 +2,12 @@
 //! injection, per-monitor-DPI displays, scancode <-> USB HID mapping, and a
 //! watchdog that notices Windows silently removing a low-level hook.
 //!
-//! The pure logic (`keymap`, `logic`, `watchdog::State`) is platform-independent so
+//! The pure logic (`keymap`, `logic`, `secure`, `watchdog::State`) is platform-independent so
 //! its tests run anywhere; everything that touches Win32 is `#[cfg(windows)]`.
 
 pub mod keymap;
 pub mod logic;
+pub mod secure;
 pub mod watchdog;
 
 #[cfg(windows)]
