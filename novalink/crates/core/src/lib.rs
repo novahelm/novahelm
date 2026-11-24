@@ -18,8 +18,10 @@ pub use clock::ClockEstimator;
 pub use liveness::{Backoff, Liveness};
 pub use seqfilter::SeqFilter;
 pub use stats::{LatencyStats, Percentiles, Window};
+pub use wake::WakeTracker;
 pub mod platform;
 pub mod time;
+pub mod wake;
 #[cfg(feature = "fake")]
 pub use platform::FakePlatform;
 pub use platform::Platform;
