@@ -14,6 +14,9 @@ pub struct PairedDevice {
     pub name: String,
     /// Most recent first.
     pub last_addrs: Vec<SocketAddr>,
+    /// The peer's wake-on-LAN hardware addresses, as it last reported them.
+    #[serde(default)]
+    pub wake_macs: Vec<[u8; 6]>,
 }
 
 pub struct TrustStore {
@@ -63,6 +66,18 @@ impl TrustStore {
         d.last_addrs.retain(|a| *a != addr);
         d.last_addrs.insert(0, addr);
         d.last_addrs.truncate(MAX_ADDRS);
+        self.save()
+    }
+
+    /// Record the peer's wake addresses; saves only when they changed. Unknown ids are ignored.
+    pub fn set_wake_macs(&mut self, id: &DeviceId, macs: Vec<[u8; 6]>) -> Result<()> {
+        let Some(d) = self.devices.iter_mut().find(|d| d.id == *id) else {
+            return Ok(());
+        };
+        if d.wake_macs == macs {
+            return Ok(());
+        }
+        d.wake_macs = macs;
         self.save()
     }
 
@@ -121,6 +136,7 @@ mod tests {
             id,
             name: "pc".into(),
             last_addrs: vec![],
+            wake_macs: vec![],
         })?;
         for port in 1..=6 {
             t.note_addr(&id, format!("192.168.1.5:{port}").parse()?)?;
@@ -145,6 +161,7 @@ mod tests {
             id,
             name: "a".into(),
             last_addrs: vec![],
+            wake_macs: vec![],
         })?;
         for port in [1, 2, 1] {
             t.note_addr(&id, format!("10.0.0.1:{port}").parse()?)?;
@@ -154,6 +171,28 @@ mod tests {
         assert_eq!(addrs[0].port(), 1);
         t.remove(&id)?;
         assert!(!t.is_trusted(&id));
+        Ok(())
+    }
+    #[test]
+    fn wake_macs_persist_and_old_files_load() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("trust.json");
+        let zeros = vec![0u8; 32];
+        std::fs::write(
+            &p,
+            format!(
+                r#"[{{"id":{},"name":"pc","last_addrs":[]}}]"#,
+                serde_json::to_string(&zeros)?
+            ),
+        )?;
+        let mut t = TrustStore::open(&p)?;
+        let id = t.list()[0].id;
+        assert!(t.list()[0].wake_macs.is_empty());
+        t.set_wake_macs(&id, vec![[1, 2, 3, 4, 5, 6]])?;
+        assert_eq!(
+            TrustStore::open(&p)?.list()[0].wake_macs,
+            vec![[1, 2, 3, 4, 5, 6]]
+        );
         Ok(())
     }
 }

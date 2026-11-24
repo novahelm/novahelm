@@ -108,6 +108,7 @@ pub async fn two_engines_dry(
         id,
         name: name.into(),
         last_addrs: vec![],
+        wake_macs: vec![],
     };
     ta.add(dev(ib, "b")).unwrap();
     tb.add(dev(ia, "a")).unwrap();
@@ -170,6 +171,7 @@ pub async fn three_engines() -> [(EngineHandle, FakePlatform); 3] {
                     id: dids[j],
                     name: names[j].into(),
                     last_addrs: vec![],
+                    wake_macs: vec![],
                 })
                 .unwrap();
         }

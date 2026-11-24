@@ -484,6 +484,23 @@ impl Manager {
         lock(&self.inner.trust).remove(&id)
     }
 
+    /// Remember the peer's wake-on-LAN addresses. Failure to save is logged, not fatal.
+    pub fn set_wake_macs(&self, id: DeviceId, macs: Vec<[u8; 6]>) {
+        if let Err(e) = lock(&self.inner.trust).set_wake_macs(&id, macs) {
+            tracing::warn!("could not save wake addresses for {id}: {e:#}");
+        }
+    }
+
+    /// The peer's saved wake-on-LAN addresses; empty if unknown.
+    pub fn wake_macs(&self, id: DeviceId) -> Vec<[u8; 6]> {
+        lock(&self.inner.trust)
+            .list()
+            .into_iter()
+            .find(|d| d.id == id)
+            .map(|d| d.wake_macs)
+            .unwrap_or_default()
+    }
+
     /// The user's decision about the code on screen. No-op without a pairing session.
     pub async fn answer_pair(&self, id: DeviceId, accept: bool) {
         let cmd = lock(&self.inner.state)
@@ -1291,6 +1308,7 @@ impl Actor {
                 Role::Requester => vec![self.addr],
                 Role::Acceptor => vec![],
             },
+            wake_macs: vec![],
         };
         if let Err(e) = lock(&inner.trust).add(device) {
             tracing::error!("could not save pairing with {}: {e:#}", self.peer);
