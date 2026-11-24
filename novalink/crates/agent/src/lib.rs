@@ -11,4 +11,5 @@ pub mod soak;
 #[cfg(feature = "fake")]
 pub mod testutil;
 pub mod wake;
+pub mod wakecheck;
 pub mod winnet;

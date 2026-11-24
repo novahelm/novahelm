@@ -137,7 +137,10 @@ async fn main() -> Result<()> {
         waker: Arc::new(NetWaker),
         wake_deadline: Duration::from_secs(20),
         wake_gap: Duration::from_secs(5),
-        // Until the Windows side reads its wired MACs, nothing is advertised.
+        // The Mac wakes this PC by its wired MAC; the Mac side has nothing to advertise.
+        #[cfg(windows)]
+        advertise_macs: novalink_agent::winnet::wired_macs(),
+        #[cfg(not(windows))]
         advertise_macs: vec![],
     };
     let engine = Engine::start(real_platform()?, cfg, opts).await?;

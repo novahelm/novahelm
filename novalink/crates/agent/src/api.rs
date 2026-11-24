@@ -600,6 +600,30 @@ fn discovery_check(seen_any: bool, waited: std::time::Duration, windows: bool) -
 #[cfg_attr(not(windows), allow(dead_code))]
 const FIREWALL_ADVICE: &str = "Run NovaLink-Setup.exe again and choose Yes when it offers to allow NovaLink through Windows Firewall.";
 
+/// `None`: no wired adapter is connected. `Some(None)`: the adapter vanished or could not
+/// be read.
+#[cfg(windows)]
+fn wake_on_lan_check(wake: Option<Option<crate::wakecheck::WakeFacts>>) -> Check {
+    match wake {
+        None => check(
+            "wake_on_lan",
+            false,
+            "no wired network adapter is connected",
+            "Wake-on-LAN needs the PC on a network cable.",
+        ),
+        Some(None) => check(
+            "wake_on_lan",
+            false,
+            "couldn't read the wired adapter's wake settings",
+            "Check Wake-on-LAN for the wired adapter in Device Manager → Power Management.",
+        ),
+        Some(Some(f)) => {
+            let (ok, detail, advice) = crate::wakecheck::verdict(&f);
+            check("wake_on_lan", ok, detail, &advice)
+        }
+    }
+}
+
 /// Windows only: whether the network is Public and whether the firewall lets NovaLink in,
 /// the two things that stop devices finding each other.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -776,6 +800,14 @@ async fn doctor(State(a): State<App>) -> ApiResult {
         .await
         .unwrap_or_else(|e| Err(e.to_string()));
         checks.extend(windows_network_checks(facts));
+        let wake = tokio::task::spawn_blocking(|| {
+            crate::winnet::wired_macs()
+                .first()
+                .map(|&mac| crate::winnet::wake_facts(mac))
+        })
+        .await
+        .unwrap_or(None);
+        checks.push(wake_on_lan_check(wake));
     }
     checks.push(discovery_check(
         !st.peers.is_empty() || !a.handle.discovered().is_empty(),
