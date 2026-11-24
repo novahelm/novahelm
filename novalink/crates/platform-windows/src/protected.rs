@@ -264,9 +264,10 @@ mod pipe {
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
-    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HANDLE};
+    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HANDLE, HLOCAL, LocalFree};
+    use windows::Win32::Security::Authorization::{GetSecurityInfo, SE_KERNEL_OBJECT};
     use windows::Win32::Security::{
-        GetTokenInformation, IsWellKnownSid, TOKEN_QUERY, TOKEN_USER, TokenUser, WinLocalSystemSid,
+        IsWellKnownSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, WinLocalSystemSid,
     };
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
@@ -275,8 +276,8 @@ mod pipe {
         CloseDesktop, DESKTOP_READOBJECTS, OpenInputDesktop,
     };
     use windows::Win32::System::Threading::{
-        GetCurrentProcessId, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32,
-        PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+        GetCurrentProcessId, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        QueryFullProcessImageNameW,
     };
     use windows::Win32::UI::Shell::{
         FOLDERID_ProgramFiles, KNOWN_FOLDER_FLAG, SHGetKnownFolderPath,
@@ -410,47 +411,41 @@ mod pipe {
             image.display()
         );
 
-        ensure_system_if_readable(*proc)
+        ensure_pipe_owned_by_system(HANDLE(client.as_raw_handle()))
     }
 
-    /// The service's token is LocalSystem's, which an ordinary user normally cannot open;
-    /// when this process can open the server's token, it must be LocalSystem's. (Failing
-    /// to open it proves nothing either way: the image and session checks carry that.)
-    fn ensure_system_if_readable(proc: HANDLE) -> anyhow::Result<()> {
-        let mut raw = HANDLE::default();
-        // SAFETY: valid out-pointer.
-        if unsafe { OpenProcessToken(proc, TOKEN_QUERY, &mut raw) }.is_err() {
-            return Ok(());
-        }
-        // SAFETY: `raw` was just produced by `OpenProcessToken`.
-        let token = unsafe { Owned::new(raw) };
-        let mut needed = 0u32;
-        // SAFETY: a null buffer with zero length only asks for the required size.
-        let _ = unsafe { GetTokenInformation(*token, TokenUser, None, 0, &mut needed) };
-        anyhow::ensure!(
-            needed > 0,
-            "GetTokenInformation reported no size for TokenUser"
-        );
-        // `u64` elements give the buffer the 8-byte alignment `TOKEN_USER` needs.
-        let mut buf = vec![0u64; (needed as usize).div_ceil(8)];
-        // SAFETY: `buf` holds at least `needed` bytes.
-        unsafe {
-            GetTokenInformation(
-                *token,
-                TokenUser,
-                Some(buf.as_mut_ptr().cast()),
-                needed,
-                &mut needed,
+    /// The pipe object itself must be owned by LocalSystem. The helper creates its pipe
+    /// with `O:SY`, and an ordinary user cannot make an object owned by SYSTEM, so a
+    /// squatter cannot pass this however it names or places its executable. Read from
+    /// the connected handle (not by name), so it is the very pipe we are about to use.
+    /// Any failure to read it rejects the server.
+    fn ensure_pipe_owned_by_system(pipe: HANDLE) -> anyhow::Result<()> {
+        let mut owner = PSID::default();
+        let mut sd = PSECURITY_DESCRIPTOR::default();
+        // SAFETY: `pipe` is this process's own connected pipe handle (opened with
+        // GENERIC_READ, which includes READ_CONTROL); the out-pointers are valid. `owner`
+        // points into `sd`, which is freed only after the check below.
+        let err = unsafe {
+            GetSecurityInfo(
+                pipe,
+                SE_KERNEL_OBJECT,
+                OWNER_SECURITY_INFORMATION,
+                Some(&mut owner),
+                None,
+                None,
+                None,
+                Some(&mut sd),
             )
-        }
-        .context("GetTokenInformation(TokenUser)")?;
-        // SAFETY: the kernel wrote a `TOKEN_USER` into the aligned `buf`; its SID points
-        // into `buf`, which is alive for the call below.
-        let system = unsafe {
-            let user = buf.as_ptr().cast::<TOKEN_USER>();
-            IsWellKnownSid((*user).User.Sid, WinLocalSystemSid).as_bool()
         };
-        anyhow::ensure!(system, "pipe server does not run as LocalSystem");
+        err.ok().context("GetSecurityInfo on the pipe")?;
+        let valid = !owner.0.is_null();
+        // SAFETY: `owner` is a valid SID inside `sd` (checked non-null above).
+        let system = valid && unsafe { IsWellKnownSid(owner, WinLocalSystemSid).as_bool() };
+        // SAFETY: `sd` was allocated by `GetSecurityInfo`, which documents `LocalFree`.
+        unsafe {
+            let _ = LocalFree(Some(HLOCAL(sd.0)));
+        }
+        anyhow::ensure!(system, "the pipe is not owned by LocalSystem");
         Ok(())
     }
 
