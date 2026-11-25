@@ -27,6 +27,7 @@
   "peers": [
     {
       "addr": "127.0.0.1:47979",
+      "can_wake": false,
       "clock_offset_us": -35,
       "connected": true,
       "dry_inject": false,
@@ -36,7 +37,9 @@
       "name": "b",
       "path": "Other",
       "reconnects": 0,
-      "rtt_us": 412
+      "rtt_us": 412,
+      "wake_failed": false,
+      "waking": false
     }
   ],
   "settings": {

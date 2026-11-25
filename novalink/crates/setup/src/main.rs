@@ -6,6 +6,8 @@
 mod firewall;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod plan;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod service;
 
 #[cfg(windows)]
 mod win;

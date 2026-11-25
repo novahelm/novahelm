@@ -105,6 +105,8 @@ pub fn same_program(rule_app: &str, exe: &Path, env: impl Fn(&str) -> Option<Str
 
 #[cfg(windows)]
 pub use probe::probe;
+#[cfg(windows)]
+pub use wired::{wake_facts, wired_macs};
 
 #[cfg(windows)]
 mod probe {
@@ -210,6 +212,184 @@ mod probe {
                 rules,
             })
         }
+    }
+}
+
+/// The PC's wired adapters, for waking it and for checking it can be woken.
+#[cfg(windows)]
+mod wired {
+    use crate::wakecheck::WakeFacts;
+    use novalink_net::netif;
+    use std::io::Read;
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    use windows::Win32::Foundation::ERROR_BUFFER_OVERFLOW;
+    use windows::Win32::NetworkManagement::IpHelper::{
+        GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+        GetAdaptersAddresses, GetBestInterface, IF_TYPE_ETHERNET_CSMACD, IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
+    use windows::Win32::Networking::WinSock::{AF_INET, AF_UNSPEC, SOCKADDR_IN};
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const COMMAND_LIMIT: Duration = Duration::from_secs(5);
+
+    struct Wired {
+        mac: [u8; 6],
+        /// The name Windows shows, as in "Ethernet".
+        alias: String,
+        description: String,
+    }
+
+    /// Connected wired adapters NovaLink may use, the one holding the default route first.
+    fn wired() -> Vec<Wired> {
+        // The adapter that would carry traffic to the internet, if Windows can say.
+        let mut best = 0u32;
+        // SAFETY: `best` is a valid out pointer for the call.
+        let best = (unsafe { GetBestInterface(u32::from_ne_bytes([8, 8, 8, 8]), &mut best) } == 0)
+            .then_some(best);
+
+        let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+        let mut len = 16 * 1024u32;
+        // 8-byte aligned storage for the adapter list.
+        let mut buf: Vec<u64> = Vec::new();
+        let mut result = 0;
+        for _ in 0..4 {
+            buf = vec![0u64; (len as usize).div_ceil(8)];
+            // SAFETY: `buf` holds at least `len` bytes and outlives the call.
+            result = unsafe {
+                GetAdaptersAddresses(
+                    AF_UNSPEC.0 as u32,
+                    flags,
+                    None,
+                    Some(buf.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>()),
+                    &mut len,
+                )
+            };
+            if result != ERROR_BUFFER_OVERFLOW.0 {
+                break;
+            }
+        }
+        if result != 0 {
+            return Vec::new();
+        }
+
+        let mut out: Vec<(bool, Wired)> = Vec::new();
+        // SAFETY: on success the buffer holds a linked list of adapters whose strings and
+        // address lists point inside it; `buf` stays alive for the whole walk.
+        unsafe {
+            let mut cur = buf.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+            while let Some(a) = cur.as_ref() {
+                cur = a.Next;
+                if a.IfType != IF_TYPE_ETHERNET_CSMACD
+                    || a.OperStatus != IfOperStatusUp
+                    || a.PhysicalAddressLength != 6
+                {
+                    continue;
+                }
+                let alias = a.FriendlyName.to_string().unwrap_or_default();
+                let mut usable = false;
+                let mut ua = a.FirstUnicastAddress;
+                while let Some(u) = ua.as_ref() {
+                    ua = u.Next;
+                    let sa = u.Address.lpSockaddr;
+                    if !sa.is_null() && (*sa).sa_family == AF_INET {
+                        let v4 = (*sa.cast::<SOCKADDR_IN>()).sin_addr.S_un.S_addr;
+                        let ip = IpAddr::V4(Ipv4Addr::from(v4.to_ne_bytes()));
+                        usable |= netif::allowed(&alias, ip);
+                    }
+                }
+                if !usable {
+                    continue;
+                }
+                let mut mac = [0u8; 6];
+                mac.copy_from_slice(&a.PhysicalAddress[..6]);
+                out.push((
+                    Some(a.Anonymous1.Anonymous.IfIndex) == best,
+                    Wired {
+                        mac,
+                        alias,
+                        description: a.Description.to_string().unwrap_or_default(),
+                    },
+                ));
+            }
+        }
+        // Stable sort: the default-route adapter first, the rest as listed.
+        out.sort_by_key(|(default, _)| !default);
+        out.into_iter().map(|(_, w)| w).collect()
+    }
+
+    /// MAC addresses of the connected wired adapters, for the other machine to wake this one.
+    /// Blocks briefly; call it off the async runtime.
+    pub fn wired_macs() -> Vec<[u8; 6]> {
+        wired().into_iter().map(|w| w.mac).collect()
+    }
+
+    /// The wake settings of the adapter with `mac`, read without admin rights. Each query
+    /// gets 5 s. Blocks, so call it off the async runtime.
+    pub fn wake_facts(mac: [u8; 6]) -> Option<WakeFacts> {
+        let w = wired().into_iter().find(|w| w.mac == mac)?;
+        let alias = w.alias.replace('\'', "''");
+        let magic_packet = run_hidden(
+            "powershell.exe",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!(
+                    "Get-NetAdapterPowerManagement -Name '{alias}' | Select -Expand WakeOnMagicPacket"
+                ),
+            ],
+        )?;
+        let wake_armed = run_hidden("powercfg.exe", &["/devicequery", "wake_armed"])?;
+        Some(WakeFacts {
+            adapter: w.alias,
+            description: w.description,
+            magic_packet,
+            wake_armed,
+        })
+    }
+
+    /// Runs a program with no window and returns its output, or `None` if it can't start,
+    /// exits with an error or takes longer than [`COMMAND_LIMIT`] (the child is then killed).
+    fn run_hidden(program: &str, args: &[&str]) -> Option<String> {
+        let Ok(mut child) = Command::new(program)
+            .args(args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return None;
+        };
+        let mut stdout = child.stdout.take();
+        let reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(s) = stdout.as_mut() {
+                let _ = s.read_to_end(&mut bytes);
+            }
+            bytes
+        });
+        let start = Instant::now();
+        let finished = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status.success(),
+                Ok(None) if start.elapsed() < COMMAND_LIMIT => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break false;
+                }
+            }
+        };
+        // Killing the child closes its pipe, so the reader always ends.
+        let bytes = reader.join().unwrap_or_default();
+        finished.then(|| String::from_utf8_lossy(&bytes).into_owned())
     }
 }
 

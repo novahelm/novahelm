@@ -1,4 +1,4 @@
-//! Embeds the three Windows executables setup installs, and the app icon.
+//! Embeds the four Windows executables setup installs, and the app icon.
 //!
 //! `NOVALINK_SETUP_PAYLOAD` names a directory holding them. When it is set, every file must
 //! be there. When it is unset (tests, `cargo test --workspace` on Windows CI) empty slices
@@ -6,10 +6,11 @@
 
 use std::path::PathBuf;
 
-const FILES: [(&str, &str); 3] = [
+const FILES: [(&str, &str); 4] = [
     ("AGENT", "novalink-agent.exe"),
     ("CLI", "novalink.exe"),
     ("TRAY", "novalink-tray.exe"),
+    ("SERVICE", "novalink-service.exe"),
 ];
 
 fn main() {
@@ -22,13 +23,14 @@ fn main() {
         println!(
             "cargo:warning=NOVALINK_SETUP_PAYLOAD is not set, so this NovaLink-Setup.exe has no \
              programs inside it and will refuse to install. Point it at a folder holding \
-             novalink-agent.exe, novalink.exe and novalink-tray.exe to build a real one."
+             novalink-agent.exe, novalink.exe, novalink-tray.exe and novalink-service.exe to \
+             build a real one."
         );
     }
     let mut code = String::new();
     for (name, file) in FILES {
         let Some(dir) = dir.as_ref().filter(|_| windows) else {
-            code += &format!("pub const {name}: &[u8] = &[];\n");
+            code += &format!("pub static {name}: &[u8] = &[];\n");
             continue;
         };
         let path = dir.join(file);
@@ -40,7 +42,7 @@ fn main() {
         }
         println!("cargo:rerun-if-changed={}", path.display());
         code += &format!(
-            "pub const {name}: &[u8] = include_bytes!({:?});\n",
+            "pub static {name}: &[u8] = include_bytes!({:?});\n",
             path.display().to_string()
         );
     }

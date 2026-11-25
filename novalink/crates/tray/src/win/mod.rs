@@ -380,6 +380,9 @@ impl App {
                     }
                 });
             }
+            ActionId::AllowLockScreen => {
+                std::thread::spawn(|| report_text(system::allow_lock_screen()));
+            }
             ActionId::Diagnostics => {
                 std::thread::spawn(diagnostics);
             }

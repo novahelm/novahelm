@@ -70,3 +70,12 @@ private func checks(ok: Int, failed: Int) -> [Check] {
     let peers = [peer(desk, "Desk", connected: true, rtt: 3400), peer(laptop, "Laptop", connected: true, rtt: 900)]
     #expect(MenuText.headerDetail(status(controller: desk, peers: peers)) == "2 of 2 devices connected · 3.4 ms")
 }
+
+@Test func wakeNoteShowsWakingOrFailed() {
+    var p = peer(desk, "Desk", connected: false)
+    #expect(MenuText.wakeNote(p) == nil)
+    p.wakeFailed = true
+    #expect(MenuText.wakeNote(p, name: "Desk") == "Desk didn't wake. Check that it's plugged into the network and that Wake-on-LAN is on (run novalink doctor on the PC).")
+    p.waking = true
+    #expect(MenuText.wakeNote(p, name: "Desk") == "Waking Desk…")
+}

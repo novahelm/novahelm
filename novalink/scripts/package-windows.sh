@@ -10,12 +10,12 @@ target=x86_64-pc-windows-gnu
 rel="$CARGO_TARGET_DIR/$target/release"
 
 cd "$repo"
-cargo build --release --target "$target" -p novalink-agent -p novalink-cli -p novalink-tray
+cargo build --release --target "$target" -p novalink-agent -p novalink-cli -p novalink-tray -p novalink-service
 
 stage="$out/NovaLink-windows"
 rm -rf "$stage" "$out/NovaLink-windows.zip" "$out/NovaLink-Setup.exe"
 mkdir -p "$stage"
-cp "$rel/novalink-agent.exe" "$rel/novalink.exe" "$rel/novalink-tray.exe" "$stage/"
+cp "$rel/novalink-agent.exe" "$rel/novalink.exe" "$rel/novalink-tray.exe" "$rel/novalink-service.exe" "$stage/"
 # Drop debug info from mingw builds (MSVC builds keep it in a separate .pdb anyway).
 if command -v x86_64-w64-mingw32-strip >/dev/null; then
   x86_64-w64-mingw32-strip "$stage"/*.exe

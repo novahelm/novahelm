@@ -226,7 +226,8 @@ private struct DevicesCard: View {
                         } label: {
                             NovaRow(icon: peer.connected ? "desktopcomputer" : "desktopcomputer.slash",
                                     tint: peer.connected ? .green : .gray, title: name,
-                                    detail: MenuText.deviceDetail(peer, position: status.position(of: peer.id)),
+                                    detail: MenuText.wakeNote(peer, name: name)
+                                        ?? MenuText.deviceDetail(peer, position: status.position(of: peer.id)),
                                     chevron: true)
                                 .padding(.horizontal, 8).padding(.vertical, 6)
                                 .opacity(peer.connected ? 1 : 0.55)

@@ -8,6 +8,7 @@ pub mod pairing;
 pub mod session;
 pub mod tls;
 pub mod trust;
+pub mod wol;
 
 /// Longest peer-supplied device name we keep.
 pub const MAX_NAME_CHARS: usize = 64;

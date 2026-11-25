@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use novalink_agent::engine::{Engine, EngineOpts};
 use novalink_agent::settings::Settings;
+use novalink_agent::wake::NetWaker;
 use novalink_agent::{api, channels};
 use novalink_agent::{logging, paths};
 use novalink_core::Platform;
@@ -48,7 +49,11 @@ fn real_platform() -> Result<Arc<dyn Platform>> {
 
 #[cfg(windows)]
 fn real_platform() -> Result<Arc<dyn Platform>> {
-    Ok(Arc::new(novalink_platform_windows::WinPlatform::new()?))
+    // Wrapped so input can reach the lock screen and UAC prompts through the service's
+    // helper when one is running; without it, behaviour is unchanged.
+    Ok(Arc::new(novalink_platform_windows::ProtectedPlatform::new(
+        novalink_platform_windows::WinPlatform::new()?,
+    )))
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -133,6 +138,15 @@ async fn main() -> Result<()> {
         log_dir: paths::log_dir(),
         settings: Settings::load(&settings_path),
         settings_path,
+        waker: Arc::new(NetWaker),
+        wake_deadline: Duration::from_secs(20),
+        wake_gap: Duration::from_secs(5),
+        // The Mac wakes this PC by its wired MAC; the Mac side has nothing to advertise.
+        // Read on each connect, so a cable plugged in later is still advertised.
+        #[cfg(windows)]
+        advertise_macs: Arc::new(novalink_agent::winnet::wired_macs),
+        #[cfg(not(windows))]
+        advertise_macs: Arc::new(Vec::new),
     };
     let engine = Engine::start(real_platform()?, cfg, opts).await?;
     tracing::info!(id = %engine.status().me, "running");

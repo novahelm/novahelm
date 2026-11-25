@@ -2,6 +2,8 @@
 
 use crate::firewall;
 use crate::plan::{Installed, Mode, Step, payload_problem, plan, still_running_text};
+use crate::service;
+use novalink_agent::securecheck;
 use novalink_agent::winnet::{self, Firewall};
 use novalink_client::{Client, ClientError};
 use std::net::{SocketAddr, TcpStream};
@@ -154,6 +156,9 @@ fn run_key_set() -> bool {
 }
 
 pub fn run() {
+    if std::env::args().skip(1).any(|a| a == "--protected-screens") {
+        return protected_screens_only();
+    }
     let uninstall = std::env::args().skip(1).any(|a| a == "--uninstall");
     let mode = if uninstall {
         Mode::Uninstall
@@ -172,6 +177,7 @@ pub fn run() {
             ("novalink-agent.exe", payload::AGENT.len()),
             ("novalink.exe", payload::CLI.len()),
             (TRAY_EXE, payload::TRAY.len()),
+            ("novalink-service.exe", payload::SERVICE.len()),
         ])
     {
         failure(why);
@@ -188,8 +194,9 @@ fn execute(mode: Mode) -> Result<(), String> {
     let dir = install_dir()?;
     let mut files_in_place = false;
     let current = detect(&dir);
+    let mut ctx = Ctx::default();
     for step in plan(&current, VERSION, mode) {
-        run_step(step, &dir, &current).map_err(|e| {
+        run_step(step, &dir, &current, &mut ctx).map_err(|e| {
             if files_in_place {
                 format!("{e} The new NovaLink files are installed; run setup again to finish.")
             } else {
@@ -201,7 +208,15 @@ fn execute(mode: Mode) -> Result<(), String> {
     Ok(())
 }
 
-fn run_step(step: Step, dir: &Path, current: &Installed) -> Result<(), String> {
+/// What one step leaves for a later one.
+#[derive(Default)]
+struct Ctx {
+    /// The firewall offer for the per-user agent waits for the lock-screen offer, which
+    /// covers the Program Files agent in the same elevation. It runs if that is declined.
+    firewall_deferred: bool,
+}
+
+fn run_step(step: Step, dir: &Path, current: &Installed, ctx: &mut Ctx) -> Result<(), String> {
     match step {
         Step::StopTray => stop_tray(dir),
         Step::StopAgent => stop_agent(current),
@@ -211,7 +226,23 @@ fn run_step(step: Step, dir: &Path, current: &Installed) -> Result<(), String> {
         Step::CreateStartMenuShortcut => create_shortcut(dir),
         Step::WriteUninstallEntry => write_uninstall_entry(dir),
         Step::AllowFirewall => {
-            allow_firewall(dir);
+            if protected_screens_needed() {
+                ctx.firewall_deferred = true;
+            } else {
+                allow_firewall(dir);
+            }
+            Ok(())
+        }
+        Step::OfferProtectedScreens => {
+            if !(protected_screens_needed() && ask(service::ASK) && install_protected_screens())
+                && ctx.firewall_deferred
+            {
+                allow_firewall(dir);
+            }
+            Ok(())
+        }
+        Step::RemoveProtectedScreens => {
+            remove_protected_screens();
             Ok(())
         }
         Step::LaunchTray => launch_tray(dir),
@@ -617,7 +648,7 @@ fn installed_text() -> String {
     let mut text = "NovaLink is installed. Look for its icon in the tray (you may need to click ^ \
                     to see it)."
         .to_string();
-    let facts = install_dir().and_then(|d| winnet::probe(&d.join(AGENT_EXE)));
+    let facts = install_dir().and_then(|d| winnet::probe(&running_agent_exe(&d)));
     if let Ok(f) = facts {
         let public = winnet::public_networks(&f);
         if !public.is_empty() {
@@ -628,10 +659,16 @@ fn installed_text() -> String {
     text
 }
 
+/// The agent exe NovaLink runs: the Program Files one once the service is installed and up
+/// to date, else the per-user copy.
+fn running_agent_exe(dir: &Path) -> PathBuf {
+    securecheck::program_files_agent_in_use(build_id()).unwrap_or_else(|| dir.join(AGENT_EXE))
+}
+
 /// Asks to let the agent through Windows Firewall when nothing does yet, then adds the rule
 /// with one administrator prompt. Declining, or a failure, leaves the install standing.
 fn allow_firewall(dir: &Path) {
-    let exe = dir.join(AGENT_EXE);
+    let exe = running_agent_exe(dir);
     let state = winnet::probe(&exe).map(|f| winnet::firewall(&f));
     if matches!(state, Ok(Firewall::Allowed | Firewall::Off)) || !ask(firewall::ASK) {
         return;
@@ -672,7 +709,7 @@ fn run_elevated_powershell(script: &str) -> Result<(), Option<String>> {
             return Ok(());
         }
         let process = Owned::new(info.hProcess);
-        WaitForSingleObject(*process, 60_000);
+        WaitForSingleObject(*process, 120_000);
         let mut code = 0;
         GetExitCodeProcess(*process, &mut code)
             .map_err(|e| Some(e.message().trim().to_string()))?;
@@ -681,6 +718,138 @@ fn run_elevated_powershell(script: &str) -> Result<(), Option<String>> {
         }
     }
     Ok(())
+}
+
+// --- lock-screen service -------------------------------------------------------------------
+
+fn program_files_dir() -> Result<PathBuf, String> {
+    Ok(env_path("ProgramFiles")?.join("NovaLink"))
+}
+
+/// What this setup writes to version.txt under Program Files: the version and a fingerprint
+/// of the agent it carries, so a rebuild with the same version still replaces that copy.
+fn build_id() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| securecheck::build_id(VERSION, payload::AGENT))
+}
+
+/// True unless the installed Program Files copy is this build and the service exists.
+fn protected_screens_needed() -> bool {
+    let installed = program_files_dir()
+        .ok()
+        .and_then(|d| std::fs::read_to_string(d.join("version.txt")).ok());
+    !service::up_to_date(
+        installed.as_deref(),
+        build_id(),
+        securecheck::service_installed(),
+    )
+}
+
+/// Writes the service and agent from this setup's own payload to a fresh folder, for the
+/// elevated script to copy from. The folder is the user's to write, so the script checks
+/// what it copied against the hashes of these same embedded bytes.
+fn stage_service_payload() -> Result<PathBuf, String> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let dir = std::env::temp_dir().join(format!("NovaLink-service-{}-{nanos}", std::process::id()));
+    std::fs::create_dir(&dir).map_err(|e| fail_text("make a temporary folder", e))?;
+    let files: [(&str, &[u8]); 2] = [
+        (service::PAYLOAD_FILES[0], payload::SERVICE),
+        (service::PAYLOAD_FILES[1], payload::AGENT),
+    ];
+    for (name, bytes) in files {
+        if let Err(e) = std::fs::write(dir.join(name), bytes) {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(fail_text(&format!("write {name}"), e));
+        }
+    }
+    Ok(dir)
+}
+
+/// Installs the service with one administrator prompt. True when it is in place; a decline
+/// or a failure (which is reported) leaves the rest of the install standing.
+fn install_protected_screens() -> bool {
+    let result = stage_service_payload().map_err(Some).and_then(|dir| {
+        let script = service::install_script(
+            &dir.to_string_lossy(),
+            build_id(),
+            &service::sha256_hex(payload::SERVICE),
+            &service::sha256_hex(payload::AGENT),
+        );
+        let r = run_elevated_powershell(&script);
+        let _ = std::fs::remove_dir_all(&dir);
+        r
+    });
+    match result {
+        Ok(()) => true,
+        Err(None) => false,
+        Err(Some(why)) => {
+            failure(&format!(
+                "Setup couldn't set up NovaLink on the lock and PIN screens: {why}. Choose \
+                 \"Allow on lock screen…\" in the NovaLink tray menu to try again."
+            ));
+            false
+        }
+    }
+}
+
+fn remove_protected_screens() {
+    let there = securecheck::service_installed() || program_files_dir().is_ok_and(|d| d.exists());
+    if !there || !ask(service::ASK_REMOVE) {
+        return;
+    }
+    match run_elevated_powershell(&service::uninstall_script()) {
+        Ok(()) | Err(None) => {}
+        Err(Some(why)) => failure(&format!(
+            "Setup couldn't remove NovaLink's lock-screen service: {why}. Remove NovaLink \
+             under Program Files yourself, and delete the NovaLinkService service with \
+             `sc.exe delete NovaLinkService` from an administrator Command Prompt."
+        )),
+    }
+}
+
+/// `NovaLink-Setup.exe --protected-screens`: only the lock-screen offer, for a NovaLink
+/// that is already installed. The tray and agent are stopped first so the Program Files
+/// agent takes over, and the tray is started again afterwards.
+fn protected_screens_only() {
+    let result = (|| -> Result<(), String> {
+        let dir = install_dir()?;
+        let current = detect(&dir);
+        if current.version.is_none() {
+            return Err(
+                "NovaLink isn't installed yet. Run NovaLink-Setup.exe without any options first."
+                    .into(),
+            );
+        }
+        if payload::SERVICE.is_empty() || payload::AGENT.is_empty() {
+            return Err(crate::plan::EMPTY_PAYLOAD.into());
+        }
+        if !protected_screens_needed() {
+            info("NovaLink already works on the lock and PIN screens.");
+            return Ok(());
+        }
+        if !ask(service::ASK) {
+            return Ok(());
+        }
+        stop_tray(&dir)?;
+        // The tray comes back on every path from here on.
+        let installed = match stop_agent(&current) {
+            Ok(()) => install_protected_screens(),
+            Err(why) => {
+                let _ = launch_tray(&dir);
+                return Err(why);
+            }
+        };
+        launch_tray(&dir)?;
+        if installed {
+            info("NovaLink now works on the lock and PIN screens.");
+        }
+        Ok(())
+    })();
+    if let Err(why) = result {
+        failure(&why);
+    }
 }
 
 // --- shortcut and launch -----------------------------------------------------------------

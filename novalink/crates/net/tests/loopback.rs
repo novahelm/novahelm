@@ -483,6 +483,7 @@ mod mesh {
                     id: other.id(),
                     name: other.name.clone(),
                     last_addrs: vec![other.addr()],
+                    wake_macs: vec![],
                 })
                 .unwrap();
         }

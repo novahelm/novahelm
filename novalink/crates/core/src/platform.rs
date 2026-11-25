@@ -19,9 +19,17 @@ pub trait Platform: Send + Sync + 'static {
     fn take_health_events(&self) -> Vec<&'static str> {
         Vec::new()
     }
+    /// True once per switch of the input desktop (for example to or from the Windows
+    /// lock screen). Held input does not carry across, so the engine releases it.
+    fn take_desktop_switch(&self) -> bool {
+        false
+    }
     /// Ask the OS to show its permission prompts and list this process in the privacy
     /// settings. Does nothing where no permission is needed.
     fn request_permissions(&self) {}
+    /// On while another machine moves this one's pointer. Windows hides the pointer
+    /// when no mouse is plugged in, so the platform forces it visible meanwhile.
+    fn set_remote_pointer(&self, _on: bool) {}
 }
 
 #[cfg(feature = "fake")]
@@ -42,8 +50,10 @@ mod fake {
         last_warp: Option<(f64, f64)>,
         suppressed: bool,
         health: Vec<&'static str>,
+        desktop_switch: bool,
         deny_capture: bool,
         requests: u32,
+        remote_pointer: bool,
     }
 
     /// In-memory `Platform` for tests. Clones share state.
@@ -79,8 +89,10 @@ mod fake {
                     last_warp: None,
                     suppressed: false,
                     health: Vec::new(),
+                    desktop_switch: false,
                     deny_capture: false,
                     requests: 0,
+                    remote_pointer: false,
                 })),
             }
         }
@@ -157,6 +169,11 @@ mod fake {
             self.st.lock().unwrap().health.push(ev);
         }
 
+        /// Queues a desktop switch for the next `take_desktop_switch`.
+        pub fn push_desktop_switch(&self) {
+            self.st.lock().unwrap().desktop_switch = true;
+        }
+
         /// While set, `start_capture` fails and the permissions read as not granted,
         /// as on a Mac without Accessibility or Input Monitoring.
         pub fn deny_capture(&self, on: bool) {
@@ -166,6 +183,10 @@ mod fake {
         /// How many times `request_permissions` was called.
         pub fn requests(&self) -> u32 {
             self.st.lock().unwrap().requests
+        }
+
+        pub fn remote_pointer(&self) -> bool {
+            self.st.lock().unwrap().remote_pointer
         }
 
         pub fn suppressed(&self) -> bool {
@@ -232,6 +253,14 @@ mod fake {
 
         fn take_health_events(&self) -> Vec<&'static str> {
             std::mem::take(&mut self.st.lock().unwrap().health)
+        }
+
+        fn take_desktop_switch(&self) -> bool {
+            std::mem::take(&mut self.st.lock().unwrap().desktop_switch)
+        }
+
+        fn set_remote_pointer(&self, on: bool) {
+            self.st.lock().unwrap().remote_pointer = on;
         }
     }
 }

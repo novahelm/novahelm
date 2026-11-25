@@ -91,11 +91,20 @@ fn client_refuses_impostor() {
 
 #[test]
 fn client_reports_not_running() {
-    let l = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}", l.local_addr().unwrap());
-    drop(l);
-    let c = Client::with(&base, "tok".into());
+    // Keep the port bound but never listen on it, so nothing else in this test binary can be
+    // handed it while the client dials (a dropped listener's port can be reused at once).
+    let s = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
+    s.bind(
+        &"127.0.0.1:0"
+            .parse::<std::net::SocketAddr>()
+            .unwrap()
+            .into(),
+    )
+    .unwrap();
+    let addr = s.local_addr().unwrap().as_socket().unwrap();
+    let c = Client::with(&format!("http://{addr}"), "tok".into());
     assert!(matches!(c.status(), Err(ClientError::NotRunning)));
+    drop(s);
 }
 
 use novalink_agent::api::{decode_hex, server_proof};

@@ -41,10 +41,14 @@ novalink-platform-macos = { path = "../platform-macos" }
 novalink-platform-windows = { path = "../platform-windows" }
 windows = { workspace = true, features = [
     "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
     "Win32_NetworkManagement_WindowsFirewall",
+    "Win32_Networking_WinSock",
     "Win32_Networking_NetworkListManager",
     "Win32_System_Com",
     "Win32_System_Ole",
+    "Win32_System_Registry",
     "Win32_System_Variant",
 ] }
 

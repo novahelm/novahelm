@@ -13,7 +13,15 @@ use crate::logic::{self, MAGIC, PROBE_MAGIC};
 use novalink_core::InputEvent;
 use novalink_proto::MouseButton;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+/// Moves sent so far, for the cursor log.
+static MOVES: AtomicU64 = AtomicU64::new(0);
+
+pub fn moves() -> u64 {
+    MOVES.load(Ordering::Relaxed)
+}
 
 #[derive(Default)]
 pub struct Injector {
@@ -75,6 +83,7 @@ impl Injector {
                 if x == 0 && y == 0 {
                     return Ok(());
                 }
+                MOVES.fetch_add(1, Ordering::Relaxed);
                 send(&[mouse(x, y, 0, MOUSEEVENTF_MOVE, MAGIC)])
             }
             InputEvent::Scroll { dx, dy } => {

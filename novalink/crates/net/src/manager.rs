@@ -147,6 +147,12 @@ pub struct PeerStatus {
     pub last_close: Option<CloseReason>,
     /// Whether the peer's agent reported `--dry-inject` (filled in by the engine).
     pub dry_inject: Option<bool>,
+    /// A wake-on-LAN burst is going out for this peer (filled in by the engine).
+    pub waking: bool,
+    /// The last wake gave up without the peer connecting (filled in by the engine).
+    pub wake_failed: bool,
+    /// We hold wake addresses for the peer (filled in by the engine).
+    pub can_wake: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -430,6 +436,9 @@ impl Manager {
                     reconnects: stat.map(|s| s.reconnects).unwrap_or(0),
                     last_close: stat.and_then(|s| s.last_close.clone()),
                     dry_inject: None,
+                    waking: false,
+                    wake_failed: false,
+                    can_wake: false,
                 }
             })
             .collect()
@@ -482,6 +491,23 @@ impl Manager {
     /// Forget a paired device. Its session notices on its next tick and closes.
     pub fn unpair(&self, id: DeviceId) -> Result<()> {
         lock(&self.inner.trust).remove(&id)
+    }
+
+    /// Remember the peer's wake-on-LAN addresses. Failure to save is logged, not fatal.
+    pub fn set_wake_macs(&self, id: DeviceId, macs: Vec<[u8; 6]>) {
+        if let Err(e) = lock(&self.inner.trust).set_wake_macs(&id, macs) {
+            tracing::warn!("could not save wake addresses for {id}: {e:#}");
+        }
+    }
+
+    /// The peer's saved wake-on-LAN addresses; empty if unknown.
+    pub fn wake_macs(&self, id: DeviceId) -> Vec<[u8; 6]> {
+        lock(&self.inner.trust)
+            .list()
+            .into_iter()
+            .find(|d| d.id == id)
+            .map(|d| d.wake_macs)
+            .unwrap_or_default()
     }
 
     /// The user's decision about the code on screen. No-op without a pairing session.
@@ -1291,6 +1317,7 @@ impl Actor {
                 Role::Requester => vec![self.addr],
                 Role::Acceptor => vec![],
             },
+            wake_macs: vec![],
         };
         if let Err(e) = lock(&inner.trust).add(device) {
             tracing::error!("could not save pairing with {}: {e:#}", self.peer);

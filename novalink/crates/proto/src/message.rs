@@ -155,6 +155,14 @@ pub enum Control {
     PeerInfo {
         dry_inject: bool,
     },
+    /// Sent on connect by a machine that can be woken: its wake-on-LAN hardware addresses.
+    WakeInfo {
+        macs: Vec<[u8; 6]>,
+    },
+    /// Sent when the driven machine's session changes: whether it is at a sign-in screen.
+    SessionState {
+        signed_out: bool,
+    },
 }
 
 /// First message on every service channel (a bidirectional stream a paired peer opens

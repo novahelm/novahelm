@@ -6,8 +6,11 @@ pub mod engine;
 pub mod logging;
 pub mod paths;
 pub mod recorder;
+pub mod securecheck;
 pub mod settings;
 pub mod soak;
 #[cfg(feature = "fake")]
 pub mod testutil;
+pub mod wake;
+pub mod wakecheck;
 pub mod winnet;

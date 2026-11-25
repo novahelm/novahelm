@@ -1,7 +1,8 @@
 use novalink_proto::MouseButton;
+use serde::{Deserialize, Serialize};
 
 /// An input event, device-independent.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum InputEvent {
     Motion { dx: f32, dy: f32 },
     Scroll { dx: f32, dy: f32 },

@@ -8,6 +8,9 @@ publish.workspace = true
 novalink-core = { path = "../core" }
 novalink-proto = { path = "../proto" }
 anyhow.workspace = true
+serde.workspace = true
+postcard.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
@@ -15,8 +18,15 @@ tracing.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
     "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_StationsAndDesktops",
     "Win32_System_Threading",
+    "Win32_UI_Accessibility",
     "Win32_UI_HiDpi",
     "Win32_UI_Input",
     "Win32_UI_Input_KeyboardAndMouse",
@@ -24,4 +34,5 @@ windows = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+novalink-core = { path = "../core", features = ["fake"] }
 tokio.workspace = true

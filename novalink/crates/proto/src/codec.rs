@@ -149,6 +149,20 @@ mod tests {
     }
 
     #[test]
+    fn wake_info_and_session_state_round_trip() {
+        for c in [
+            Control::WakeInfo {
+                macs: vec![[0x00, 0x1a, 0x2b, 0x3c, 0x4d, 0x5e]],
+            },
+            Control::SessionState { signed_out: true },
+        ] {
+            let mut d = ControlDecoder::default();
+            d.push(&encode_control(&c));
+            assert_eq!(d.next().unwrap(), Some(c));
+        }
+    }
+
+    #[test]
     fn motion_datagram_is_small() {
         let d = Datagram::Motion {
             seq: u64::MAX,

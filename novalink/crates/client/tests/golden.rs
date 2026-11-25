@@ -120,12 +120,20 @@ async fn status_and_doctor_with_a_peer_and_a_layout_link() {
     let status = n.value("", get(&base, "/v1/status").await);
     assert_eq!(status["layout"]["links"][0]["from_edge"], "Right");
     let mut doctor = n.value("", get(&base, "/v1/doctor").await);
-    // The fixture is the Mac's answer. Windows adds two checks of its own, whose results depend on the machine the
-    // test runs on (its network profile and firewall rules), so they are left out of the comparison there.
+    // The fixture is the Mac's answer. Windows adds checks of its own whose results depend on the machine the test
+    // runs on (its network profile, firewall rules, network adapter's wake settings and sign-in policies), so they
+    // are left out of the comparison there.
+    const WINDOWS_ONLY: [&str; 5] = [
+        "network",
+        "firewall",
+        "wake_on_lan",
+        "uac_secure_desktop",
+        "ctrl_alt_del",
+    ];
     if cfg!(windows)
         && let Some(checks) = doctor["checks"].as_array_mut()
     {
-        checks.retain(|c| c["name"] != "network" && c["name"] != "firewall");
+        checks.retain(|c| !WINDOWS_ONLY.iter().any(|n| c["name"] == *n));
     }
     check("status.json", &status);
     check("doctor.json", &doctor);

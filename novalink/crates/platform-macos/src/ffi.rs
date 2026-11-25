@@ -122,6 +122,7 @@ unsafe extern "C" {
     pub fn CGWarpMouseCursorPosition(p: CGPoint) -> CGError;
     pub fn CGDisplayHideCursor(display: u32) -> CGError;
     pub fn CGDisplayShowCursor(display: u32) -> CGError;
+    pub fn CGCursorIsVisible() -> bool;
     pub fn CGMainDisplayID() -> u32;
     pub fn CGGetActiveDisplayList(max: u32, ids: *mut u32, count: *mut u32) -> CGError;
     pub fn CGDisplayBounds(id: u32) -> CGRect;

@@ -76,13 +76,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install stable --profile minimal && rustup default stable
-      - run: cargo build --release --locked -p novalink-agent -p novalink-cli -p novalink-tray
+      - run: cargo build --release --locked -p novalink-agent -p novalink-cli -p novalink-tray -p novalink-service
       - name: Package
         shell: pwsh
         run: |
           $stage = "dist/NovaLink-windows"
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item target/release/novalink-agent.exe, target/release/novalink.exe, target/release/novalink-tray.exe $stage
+          Copy-Item target/release/novalink-agent.exe, target/release/novalink.exe, target/release/novalink-tray.exe, target/release/novalink-service.exe $stage
           $env:NOVALINK_SETUP_PAYLOAD = (Resolve-Path $stage).Path
           cargo build --release --locked -p novalink-setup
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
